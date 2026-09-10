@@ -1,0 +1,48 @@
+--- a/include/tcg/tcg-apple-jit.h
++++ b/include/tcg/tcg-apple-jit.h
+@@ -26,14 +26,19 @@
+  * Reversed from /usr/lib/system/libsystem_pthread.dylib
+  */
+ 
+-#if defined(__aarch64__) && defined(CONFIG_DARWIN)
++#ifdef CONFIG_DARWIN
++#include <TargetConditionals.h>
++#endif
++
++/* AndroidEmu uses separately prepared RW/RX aliases on iOS, not APRR. */
++#if defined(__aarch64__) && defined(CONFIG_DARWIN) && !TARGET_OS_IPHONE
+ 
+ #define _COMM_PAGE_START_ADDRESS        (0x0000000FFFFFC000ULL) /* In TTBR0 */
+ #define _COMM_PAGE_APRR_SUPPORT         (_COMM_PAGE_START_ADDRESS + 0x10C)
+ #define _COMM_PAGE_APPR_WRITE_ENABLE    (_COMM_PAGE_START_ADDRESS + 0x110)
+ #define _COMM_PAGE_APRR_WRITE_DISABLE   (_COMM_PAGE_START_ADDRESS + 0x118)
+ 
+-static __attribute__((__always_inline__)) bool jit_write_protect_supported(void)
++static inline __attribute__((__always_inline__)) bool jit_write_protect_supported(void)
+ {
+     /* Access shared kernel page at fixed memory location. */
+     uint8_t aprr_support = *(volatile uint8_t *)_COMM_PAGE_APRR_SUPPORT;
+@@ -41,7 +46,7 @@
+ }
+ 
+ /* write protect enable = write disable */
+-static __attribute__((__always_inline__)) void jit_write_protect(int enabled)
++static inline __attribute__((__always_inline__)) void jit_write_protect(int enabled)
+ {
+     /* Access shared kernel page at fixed memory location. */
+     uint8_t aprr_support = *(volatile uint8_t *)_COMM_PAGE_APRR_SUPPORT;
+@@ -72,12 +77,12 @@
+ 
+ #else /* defined(__aarch64__) && defined(CONFIG_DARWIN) */
+ 
+-static __attribute__((__always_inline__)) bool jit_write_protect_supported(void)
++static inline __attribute__((__always_inline__)) bool jit_write_protect_supported(void)
+ {
+     return false;
+ }
+ 
+-static __attribute__((__always_inline__)) void jit_write_protect(int enabled)
++static inline __attribute__((__always_inline__)) void jit_write_protect(int enabled)
+ {
+ }
+ 

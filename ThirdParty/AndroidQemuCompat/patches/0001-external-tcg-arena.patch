@@ -1,0 +1,139 @@
+--- a/tcg/region.c
++++ b/tcg/region.c
+@@ -624,40 +624,7 @@
+                                    vm_inherit_t inheritance);
+ 
+ #include <TargetConditionals.h>
+-#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+-#include <sys/types.h>
+-#include <sys/sysctl.h>
+-static int is_debugger_attached(void)
+-{
+-    int mib[4];
+-    struct kinfo_proc info;
+-    size_t size;
+-
+-    info.kp_proc.p_flag = 0;
+-
+-    /* Initialize MIB for sysctl call */
+-    mib[0] = CTL_KERN;
+-    mib[1] = KERN_PROC;
+-    mib[2] = KERN_PROC_PID;
+-    mib[3] = getpid();
+-
+-    size = sizeof(info);
+-
+-    if (sysctl(mib, 4, &info, &size, NULL, 0) == -1) {
+-        return 0; // sysctl failed, be conservative
+-    }
+-
+-    /* P_TRACED means the process is being debugged */
+-    return (info.kp_proc.p_flag & P_TRACED) != 0;
+-}
+-
+-static void break_prepare_jit_region(mach_vm_address_t addr, size_t len)
+-{
+-    asm ("mov x0, %0\n"
+-         "mov x1, %1\n"
+-         "brk #0x69" :: "r" (addr), "r" (len) : "x0", "x1");
+-}
+-#endif
++
+ 
+ static int alloc_code_gen_buffer_splitwx_vmremap(size_t size, Error **errp)
+ {
+@@ -666,12 +633,7 @@
+     vm_prot_t cur_prot, max_prot;
+     int orig_prot = PROT_READ | PROT_WRITE;
+ 
+-#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+-    /* iOS 26 with TXM requires new workaround*/
+-    if (__builtin_available(iOS 26, visionOS 26, watchOS 26, tvOS 26, *)) {
+-        orig_prot = PROT_READ | PROT_EXEC;
+-    }
+-#endif
++
+ 
+     if (!alloc_code_gen_buffer_anon(size, orig_prot,
+                                     MAP_PRIVATE | MAP_ANONYMOUS, errp)) {
+@@ -705,22 +667,7 @@
+         return -1;
+     }
+ 
+-#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+-    if (__builtin_available(iOS 26, visionOS 26, watchOS 26, tvOS 26, *)) {
+-        if (is_debugger_attached()) {
+-            /* let debugger modify the page permission */
+-            break_prepare_jit_region(buf_rx, size);
+-        }
+-
+-        /* finally mark the read-write portion as RW */
+-        if (mprotect((void *)buf_rw, size, PROT_READ | PROT_WRITE) != 0) {
+-            error_setg_errno(errp, errno, "mprotect for jit splitwx (rw)");
+-            munmap((void *)buf_rx, size);
+-            munmap((void *)buf_rw, size);
+-            return -1;
+-        }
+-    }
+-#endif
++
+ 
+     tcg_splitwx_diff = buf_rx - buf_rw;
+     return PROT_READ | PROT_WRITE;
+@@ -812,6 +759,32 @@
+  * in practice. Multi-threaded guests share most if not all of their translated
+  * code, which makes parallel code generation less appealing than in system-mode
+  */
++/* AndroidEmu: the host owns the prepared RX/RW mappings for the whole VM.
++ * Registration is allowed only before QEMU initialization on the launch thread.
++ */
++static void *android51_tcg_rw;
++static void *android51_tcg_rx;
++static size_t android51_tcg_bytes;
++static bool android51_tcg_initialized;
++
++bool android51_tcg_set_region(void *rw, void *rx, size_t bytes);
++bool android51_tcg_set_region(void *rw, void *rx, size_t bytes)
++{
++    size_t page = qemu_real_host_page_size();
++    uintptr_t w = (uintptr_t)rw, x = (uintptr_t)rx;
++    if (android51_tcg_initialized || android51_tcg_rw || !w || !x ||
++        w == x || w % page || x % page || bytes % page ||
++        bytes < MIN_CODE_GEN_BUFFER_SIZE || bytes > MAX_CODE_GEN_BUFFER_SIZE ||
++        bytes > UINTPTR_MAX - w || bytes > UINTPTR_MAX - x ||
++        (w < x ? x - w : w - x) < bytes) {
++        return false;
++    }
++    android51_tcg_rw = rw;
++    android51_tcg_rx = rx;
++    android51_tcg_bytes = bytes;
++    return true;
++}
++
+ void tcg_region_init(size_t tb_size, int splitwx, unsigned max_cpus)
+ {
+     const size_t page_size = qemu_real_host_page_size();
+@@ -835,7 +808,22 @@
+         tb_size = MAX_CODE_GEN_BUFFER_SIZE;
+     }
+ 
+-    have_prot = alloc_code_gen_buffer(tb_size, splitwx, &error_fatal);
++    android51_tcg_initialized = true;
++    if (android51_tcg_rw) {
++        tb_size = MIN(tb_size, android51_tcg_bytes);
++        region.start_aligned = android51_tcg_rw;
++        region.total_size = tb_size;
++        tcg_splitwx_diff = (uintptr_t)android51_tcg_rx - (uintptr_t)android51_tcg_rw;
++        have_prot = PROT_READ | PROT_WRITE;
++    } else {
++#if defined(CONFIG_DARWIN)
++#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
++        error_report("AndroidEmu requires a prepared external TCG arena on iOS");
++        exit(EXIT_FAILURE);
++#endif
++#endif
++        have_prot = alloc_code_gen_buffer(tb_size, splitwx, &error_fatal);
++    }
+     assert(have_prot >= 0);
+ 
+     /* Request large pages for the buffer and the splitwx.  */

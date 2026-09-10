@@ -1,0 +1,92 @@
+name: Build iOS development app
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build portable components with sanitizers
+        run: |
+          cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Debug -DEMU_SANITIZE=ON
+          cmake --build build/native --parallel 2
+          ctest --test-dir build/native --output-on-failure
+      - name: Verify tooling
+        run: python3 -m unittest discover -s Tests -p 'test_*.py' -v
+  goldfish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ninja-build pkg-config python3-venv libglib2.0-dev libpixman-1-dev libslirp-dev libfdt-dev zlib1g-dev
+      - name: Fetch pinned QEMU source
+        run: python3 scripts/fetch_references.py --only qemu
+      - name: Build Goldfish-only ARM emulator
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build_qemu_host.sh 2>&1 | tee qemu-build.log
+      - name: Exercise actual MMIO and TCG boot path without Android images
+        run: |
+          python3 Tests/QEMU/test_goldfish.py
+          python3 Tests/QEMU/test_embedded.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: goldfish-build-diagnostics
+          path: qemu-build.log
+          if-no-files-found: ignore
+  ios:
+    runs-on: macos-15
+    needs: [native, goldfish]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Select an installed stable Xcode with iOS 26 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/select_xcode.py >> "$GITHUB_ENV"
+      - name: Swift model tests
+        run: bash scripts/test_models.sh
+      - name: Install cross-build tools
+        run: |
+          brew install meson ninja pkg-config gettext glib autoconf automake libtool
+          echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
+          python3 -m venv build/tools-venv
+          build/tools-venv/bin/pip install setuptools six pyparsing pyyaml distlib mako
+          echo "$PWD/build/tools-venv/bin" >> "$GITHUB_PATH"
+      - name: Compile arm64 iOS core and Goldfish engine
+        run: bash scripts/build_dependencies.sh
+      - name: Build unsigned iPhoneOS application
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build_ios.sh 2>&1 | tee build-ios.log
+      - name: Package development IPA
+        run: bash scripts/package_unsigned_ipa.sh
+      - name: Collect corresponding project source
+        run: |
+          git archive --format=tar.gz --output=build/artifacts/AndroidEmu-source.tar.gz HEAD
+          python3 scripts/collect_engine_source.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: AndroidEmu-development-unsigned
+          path: build/artifacts/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: build-diagnostics
+          path: |
+            build-ios.log
+            build/DerivedData/Build/Products/Release-iphoneos/*.dSYM
+          if-no-files-found: ignore

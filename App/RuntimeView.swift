@@ -1,0 +1,169 @@
+import SwiftUI
+import Combine
+
+@MainActor final class RuntimeModel: ObservableObject {
+    let controller = AEVMController()
+    @Published private(set) var status = "起動準備"
+    @Published private(set) var stopped = false
+    @Published private(set) var hasFrame = false
+    @Published private(set) var metrics: [String: NSNumber] = [:]
+    @Published var paused = false
+    @Published var showPerformance = false
+    private var sampler: AnyCancellable?
+    private var samples = 0
+    func start(configuration: VMConfiguration) -> Bool {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Android51", isDirectory: true)
+        let success = controller.start(imageDirectory: root.path,
+            ramMiB: UInt32(configuration.ram.rawValue), cacheMiB: UInt32(configuration.cache.rawValue))
+        status = controller.statusText
+        guard success else { return false }
+        showPerformance = configuration.performanceOverlay
+        sampler = Timer.publish(every: 1, on: .main, in: .common).autoconnect().sink { [weak self] _ in
+            guard let self else { return }
+            self.paused = self.controller.guestPaused
+            self.samples += 1
+            if let adb = self.controller.adb, !adb.bootCompleted, !adb.busy, !self.paused, self.samples % 10 == 1 {
+                adb.checkBoot()
+            }
+            self.status = self.controller.statusText
+            self.stopped = self.controller.stopped
+            if self.controller.adb?.bootCompleted == true && !self.paused && !self.stopped { self.status = "Android実行中" }
+            self.metrics = self.controller.statistics()
+            self.hasFrame = (self.metrics["totalGuestUpdates"]?.uint64Value ?? 0) > 0
+            if self.stopped { self.sampler = nil }
+        }
+        return true
+    }
+    func pause(_ value: Bool) { paused = value; controller.setGuestPaused(value) }
+    func stop() { controller.stopGuest() }
+}
+
+private struct GuestSurface: UIViewControllerRepresentable {
+    let controller: AEVMController
+    func makeUIViewController(context: Context) -> AEVMController { controller }
+    func updateUIViewController(_ controller: AEVMController, context: Context) {}
+}
+
+struct RuntimeView: View {
+    @ObservedObject var runtime: RuntimeModel
+    @StateObject private var network = NetworkStatus()
+    @State private var menu = false
+    @State private var log = false
+    @State private var confirmStop = false
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            GuestSurface(controller: runtime.controller).ignoresSafeArea()
+            if !runtime.hasFrame || runtime.stopped {
+                VStack(spacing: 16) {
+                    if !runtime.stopped { ProgressView().tint(.white) }
+                    Text(runtime.status).foregroundStyle(.white)
+                    Button("起動ログ") { log = true }.tint(.white)
+                    if runtime.stopped { Button("ライブラリへ戻る") { dismiss() }.tint(.white) }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(true)
+            }
+            if runtime.showPerformance {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(String(format: "更新 %.0f/s · 表示 %.0f/s", value("guestUpdatesPerSecond"), value("presentationsPerSecond")))
+                    Text(String(format: "メモリ %.0f MiB · コピー %.1f MiB/s", value("footprintMiB"), value("copyMiBPerSecond")))
+                    Text(String(format: "TCG %.1f/%.0f MiB · flush %.0f", value("tcgUsedMiB"), value("tcgCapacityMiB"), value("tbFlushCount")))
+                }
+                .font(.caption.monospacedDigit()).foregroundStyle(.white)
+                .padding(8).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 12).padding(.top, 8)
+                .allowsHitTesting(false)
+            }
+            Button { menu = true } label: {
+                Image(systemName: "ellipsis").font(.body.bold()).foregroundStyle(.white)
+                    .frame(width: 44, height: 36).background(.black.opacity(0.55), in: Capsule())
+            }.accessibilityLabel("エミュレータの操作").padding(.trailing, 12).padding(.top, 8)
+        }
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
+        .interactiveDismissDisabled()
+        .onChange(of: phase) { _, phase in
+            if phase == .background { runtime.pause(true) }
+            if phase == .active && runtime.paused { menu = true }
+        }
+        .sheet(isPresented: $menu) {
+            NavigationStack {
+                List {
+                    Section {
+                        Text(runtime.status)
+                        Button(runtime.paused ? "再開" : "一時停止") { runtime.pause(!runtime.paused); menu = false }
+                        Toggle("パフォーマンスを表示", isOn: $runtime.showPerformance)
+                    }
+                    Section("Androidの操作") {
+                        HStack {
+                            GuestKey(label: "戻る", code: 158, runtime: runtime)
+                            GuestKey(label: "ホーム", code: 172, runtime: runtime)
+                            GuestKey(label: "履歴", code: 580, runtime: runtime)
+                        }.buttonStyle(.bordered)
+                        HStack {
+                            GuestKey(label: "電源", code: 116, runtime: runtime)
+                            GuestKey(label: "音量−", code: 114, runtime: runtime)
+                            GuestKey(label: "音量＋", code: 115, runtime: runtime)
+                        }.buttonStyle(.bordered)
+                    }
+                    Section("旧アプリ向け") {
+                        HStack {
+                            GuestKey(label: "メニュー", code: 139, runtime: runtime)
+                            GuestKey(label: "検索", code: 217, runtime: runtime)
+                        }
+                    }
+                    Section("接続・診断") {
+                        Text(network.description)
+                        if let adb = runtime.controller.adb {
+                            NavigationLink("APK・ADB") { ADBToolsView(client: adb) }
+                        }
+                        Button("シリアルログ") { menu = false; log = true }
+                        Text("停止すると、次回の起動にはアプリを開き直す必要があります。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button("Androidを停止", role: .destructive) { confirmStop = true }
+                    }
+                }.navigationTitle("Android")
+                    .toolbar { Button("閉じる") { menu = false } }
+            }.presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $log) {
+            NavigationStack {
+                ScrollView { Text(runtime.controller.serialText).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+                    .navigationTitle("起動ログ")
+                    .toolbar {
+                        ShareLink(item: runtime.controller.serialText)
+                        Button("閉じる") { log = false }
+                    }
+            }
+        }
+        .confirmationDialog("Androidを停止しますか？未保存のデータは失われる場合があります。", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("停止", role: .destructive) { runtime.stop(); menu = false }
+        }
+    }
+    private func value(_ key: String) -> Double { runtime.metrics[key]?.doubleValue ?? 0 }
+}
+
+private struct GuestKey: View {
+    let label: String
+    let code: UInt16
+    let runtime: RuntimeModel
+    @State private var down = false
+    var body: some View {
+        Text(label).frame(maxWidth: .infinity).padding(.vertical, 10)
+            .background(.secondary.opacity(down ? 0.3 : 0.1), in: RoundedRectangle(cornerRadius: 8))
+            .gesture(DragGesture(minimumDistance: 0).onChanged { _ in
+                if !down { down = true; runtime.controller.sendGuestKey(code, pressed: true) }
+            }.onEnded { _ in release() })
+            .onDisappear { release() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                runtime.controller.sendGuestKey(code, pressed: true)
+                runtime.controller.sendGuestKey(code, pressed: false)
+            }
+    }
+    private func release() {
+        if down { down = false; runtime.controller.sendGuestKey(code, pressed: false) }
+    }
+}

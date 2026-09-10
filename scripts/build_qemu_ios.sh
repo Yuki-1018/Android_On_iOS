@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+repo_dir="$PWD"
+[[ "$(uname -s)" == Darwin ]] || { echo 'iOS engine compilation requires macOS and Xcode 26.' >&2; exit 1; }
+ios_sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+[[ "${ios_sdk_version%%.*}" -ge 26 ]] || { echo 'Select Xcode with iPhoneOS SDK 26 or newer.' >&2; exit 1; }
+for reference in qemu UTM; do
+  if [[ ! -d "ThirdParty/checkouts/$reference/.git" ]]; then python3 scripts/fetch_references.py --only "$reference"; fi
+done
+python3 scripts/prepare_qemu.py ThirdParty/checkouts/qemu
+python3 scripts/prepare_ios_sysroot.py
+export ANDROID51_UTM_ROOT="$repo_dir/ThirdParty/checkouts/UTM"
+# UTM's generated build stays inside our ignored workspace build directory.
+cd build/ios-dependencies
+bash build-minimal.sh -p ios -a arm64 -q "$repo_dir/ThirdParty/checkouts/qemu"
+cd "$repo_dir"
+ios_prefix="$repo_dir/build/ios-dependencies/sysroot-iOS-arm64"
+ios_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path)"
+ios_cc="$(xcrun --sdk iphoneos --find clang)"
+ios_cxx="$(xcrun --sdk iphoneos --find clang++)"
+export PKG_CONFIG="$ios_prefix/host/bin/pkg-config"
+export PKG_CONFIG_LIBDIR="$ios_prefix/lib/pkgconfig:$ios_prefix/share/pkgconfig"
+export PKG_CONFIG_PATH=""
+ios_flags="-target arm64-apple-ios26.0 -isysroot $ios_sdk_path -I$ios_prefix/include"
+ios_ldflags="-target arm64-apple-ios26.0 -isysroot $ios_sdk_path -L$ios_prefix/lib -Wl,-headerpad_max_install_names"
+mkdir -p build/qemu-ios
+cd build/qemu-ios
+"$repo_dir/ThirdParty/checkouts/qemu/configure" --prefix="$ios_prefix" \
+  --cc="$ios_cc" --cxx="$ios_cxx" --cpu=aarch64 --cross-prefix= \
+  --extra-cflags="$ios_flags" --extra-cxxflags="$ios_flags" --extra-ldflags="$ios_ldflags" \
+  --target-list=arm-softmmu --without-default-devices --enable-shared-lib -Db_staticpic=true \
+  --enable-ucontext --with-coroutine=libucontext --enable-slirp --enable-pixman \
+  --disable-hvf --disable-hvf-private --disable-cocoa --disable-sdl --disable-gtk \
+  --disable-coreaudio --disable-pvg --disable-dbus-display --disable-slirp-smbd --disable-spice --disable-vnc --disable-opengl \
+  --disable-virglrenderer --disable-guest-agent --disable-tools --disable-user --disable-docs \
+  --disable-debug-info --disable-werror --disable-capstone --disable-gnutls --disable-nettle \
+  --disable-gcrypt --disable-curl --disable-libssh --disable-libnfs --disable-libusb --disable-usb-redir
+ninja -j "${QEMU_BUILD_JOBS:-2}" libqemu-arm-softmmu.dylib
+cd "$repo_dir"
+python3 scripts/package_engine_frameworks.py build/qemu-ios/libqemu-arm-softmmu.dylib "$ios_prefix" build/ios-frameworks

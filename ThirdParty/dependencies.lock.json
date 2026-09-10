@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "references": [
+    {
+      "name": "aosp-qemu",
+      "url": "https://android.googlesource.com/platform/external/qemu",
+      "commit": "006a174244e336c578f45bf78a9dbdbd890c217d",
+      "tag": "android-5.1.1_r38",
+      "license": "GPL-2.0-only (ported Goldfish sources); per-file terms elsewhere",
+      "linked": false,
+      "adapted": [
+        "hw/android/android_arm.c",
+        "hw/android/goldfish",
+        "android/boot-properties.c",
+        "android/hw-qemud.c"
+      ]
+    },
+    {
+      "name": "qemu",
+      "url": "https://github.com/utmapp/qemu.git",
+      "commit": "b44153a4b6aabf86edebf92199b14aec26e15d59",
+      "license": "GPL-2.0 and per-file licenses",
+      "linked": false,
+      "integration": "host shared library and iOS framework build input; iOS build not yet verified"
+    },
+    {
+      "name": "UTM",
+      "url": "https://github.com/utmapp/UTM.git",
+      "commit": "b6f7475be54f9cb542c46b131319454b83489ced",
+      "license": "Apache-2.0 application; dependencies have separate licenses",
+      "linked": false,
+      "integration": "pinned minimal iOS dependency cross-build machinery; no UTM UI or Hypervisor"
+    },
+    {
+      "name": "StikJIT",
+      "url": "https://github.com/StikDebug/StikJIT.git",
+      "commit": "3623e725876f76aecb0520582ad6194bacb15d39",
+      "license": "MPL-2.0",
+      "linked": false,
+      "adapted": [
+        "INTEGRATION.md universal app-side entry points",
+        "Sources/ProcessInfo+TXM.swift detection approach"
+      ]
+    }
+  ]
+}

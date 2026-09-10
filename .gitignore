@@ -1,0 +1,14 @@
+build/
+.build/
+DerivedData/
+ThirdParty/checkouts/
+*.ipa
+*.dSYM/
+*.xcarchive/
+*.img
+*.apk
+kernel-qemu
+xcuserdata/
+.DS_Store
+__pycache__/
+*.pyc

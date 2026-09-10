@@ -1,0 +1,98 @@
+# AndroidEmu
+
+`CODEX_ANDROID_EMULATOR_COMPLETE.md`を目標とする、iOS 26+実機arm64向けAndroid 5.1.1 / API 22 / ARMv7 Goldfishエミュレータです。
+
+iOS用の全画面Runtime、QEMU shared library起動、modern JIT領域の受け渡し、Metal描画、タッチ、音声、NAT、ADB/APK操作を実装しています。**Linuxで埋め込みエンジンを検証しましたが、iOSビルド・実機でのAndroid起動・Launcher到達は未確認です。** 詳しい到達点は[実装状況](IMPLEMENTATION_STATUS.md)を参照してください。
+
+Android OS/kernelイメージ、APK、Google Play Services/GMSは同梱・取得・外部送信しません。利用可能なAndroid **5.1.1 / API 22 / default / armeabi-v7a / Goldfish**イメージを自分で用意します。App Store向けではなくサイドロードを前提とします。
+
+## アプリの操作
+
+1. Filesからイメージフォルダを「Add Android」で取り込みます。
+2. Guest RAMとTCG cacheを設定し、StikDebugまたは対応universal debuggerでJITを有効にします。
+3. JIT Readyになったら「Androidを起動」を選びます。QEMU frameworkが欠けたビルドでは起動できません。
+4. Androidの実フレームバッファを全画面に表示します。右上の「…」から一時停止、Androidキー、性能表示、起動ログ、APK・ADBを開きます。
+
+画面は起動時の端末比率に合わせます。タッチは直接10点Protocol Bとして渡し、Androidキーは押している時間を保持します。外付けキーボードは物理HIDキーをguestへ送ります。システム画面を模した静止画や疑似Android UIは表示しません。
+
+backgroundまたはメモリ警告ではVMを一時停止します。復帰は操作シートから行います。QEMUの安全な再初期化が未検証のため、**停止後の再起動にはアプリを終了して開き直す必要があります。** userdata/cacheは永続化されますが、停止時にguest内の未保存データが失われる場合があります。
+
+## イメージフォルダ
+
+```text
+Android51/
+  kernel-qemu             # または kernel。ARM zImage
+  ramdisk.img
+  system.img
+  userdata.img
+  source.properties       # 必須
+  cache.img               # 任意
+  hardware-properties.ini # 任意
+```
+
+ZIPを展開してからフォルダを選択します。`source.properties`で`AndroidVersion.ApiLevel=22`、`SystemImage.Abi=armeabi-v7a`、`SystemImage.TagId=default`を検査します。元ファイルは変更せず、Application Support/Android51へコピー・sparse変換します。kernel/ramdisk各64 MiB、ディスク各8 GiB、合計16 GiBまでです。実行時のrawディスクは4096-byte alignmentが必要です。
+
+メタデータとkernelヘッダの確認は、system内部のバージョンやGMS不在を保証しません。SHA-256は取り込み記録であり公式署名の検証ではありません。
+
+## JIT
+
+iOS 26+実機と、再署名時の`get-task-allow=true`が必要です。StikDebugは別アプリです。TXM/SPTMに応じたuniversal protocolでRW/RX aliasを準備し、生成コードの実行検査後に同じ領域をTCGへ渡します。古いJIT方式やTCIへのフォールバックはありません。
+
+URL起動成功だけではReadyにしません。通常のLLDBはuniversal scriptの代わりにならず、未処理のbreakpointで終了する場合があります。領域準備後のcache変更や失敗後の再準備にはアプリの再起動が必要です。実機でのTXM/SPTM検証はまだ行えていません。
+
+## ビルドと未署名IPA
+
+macOSとXcodeのiPhoneOS SDK 26以降が必要です。
+
+```sh
+brew install meson ninja pkg-config gettext glib autoconf automake libtool
+export PATH="$(brew --prefix gettext)/bin:$PATH"
+bash scripts/bootstrap.sh
+bash scripts/test_models.sh
+bash scripts/build_dependencies.sh
+bash scripts/build_ios.sh
+bash scripts/package_unsigned_ipa.sh
+python3 scripts/collect_engine_source.py
+```
+
+`build_dependencies.sh`はportable coreに加え、固定UTMのbuild machineryから必要なlibffi/iconv/gettext/glib/pixman/slirp/libucontextだけを構築し、Goldfish用QEMUをiOS shared libraryへビルドします。`build_ios.sh`はエンジンと依存frameworkのclosureをアプリへ配置します。macOSバイナリや未同梱のhostライブラリ依存はpackagerが拒否します。
+
+GitHub Actionsにも同じ経路を追加しています。成功時の`AndroidEmu-development-unsigned` ArtifactにはIPA、entitlements、再署名メモ、アプリの対応ソース、実際のQEMU・依存ソースが含まれます。エンジンを欠いたIPAは検査で失敗します。**この環境ではActions／Xcode実行と実IPA生成は未確認です。**
+
+再署名では`Frameworks/`の全frameworkを先に署名し、最後にアプリへJIT用entitlementsを適用します。未署名IPA自体には有効なentitlementsはありません。
+
+## ホストでの検証
+
+Linuxの依存:
+
+```sh
+sudo apt-get install build-essential ninja-build pkg-config python3-venv libglib2.0-dev libpixman-1-dev libslirp-dev libfdt-dev zlib1g-dev
+python3 scripts/fetch_references.py --only qemu
+bash scripts/build_qemu_host.sh
+python3 Tests/QEMU/test_goldfish.py
+python3 Tests/QEMU/test_embedded.py
+cmake -S . -B build/native -DEMU_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/native --parallel 2
+ctest --test-dir build/native --output-on-failure
+python3 -m unittest discover -s Tests -p 'test_*.py' -v
+```
+
+埋め込みテストはアプリと同じABIを呼び、実TCG・外部arena・画素・PCM・ADB pipe・pause/resume/stopを検証します。Android OSのテストではありません。
+
+自分のrawイメージでheadless起動を試す場合:
+
+```sh
+python3 scripts/run_android_host.py /path/to/Android51 --qmp /tmp/android51-qmp.sock
+```
+
+systemはread-only、userdata/cacheは書き込み可能です。作業用コピーを使ってください。QMPは指定したローカルUnixソケットだけを開きます。
+
+## 実装上の制約
+
+- 元のGoldfish boardにSMP起動経路がないため1 vCPUです。2 vCPU/MTTCGを動作確認した機能として表示しません。
+- 描画はguest software renderer + Metal framebufferです。ANGLE/GLES command streamのGPU加速は未実装です。
+- 実guestのkernel/ramdisk互換性、Launcher、音声、DHCP/DNS、APKインストールはまだ確認できていません。
+- ADBはアプリ内transportです。初回はAndroid側のUSBデバッグ許可が必要な場合があります。APKは512 MiBまで、shell出力とserialログは有界です。
+- 性能表示は実カウンタです。未測定のinput-to-photonや架空のFPSは表示しません。
+
+ライセンスと出典は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)、[ThirdParty/README.md](ThirdParty/README.md)、[Goldfish integration](ThirdParty/AndroidQemuCompat/README.md)を参照してください。

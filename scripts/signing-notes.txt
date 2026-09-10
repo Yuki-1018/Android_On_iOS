@@ -1,0 +1,20 @@
+AndroidEmu development build — embedded ARMv7 Goldfish QEMU engine.
+Android Launcher and iOS real-device execution have not been verified.
+This artifact contains no Android images or APKs.
+The IPA is unsigned. Re-sign with a sideloading method that preserves
+get-task-allow=true from AndroidEmu.entitlements for the main app process.
+Re-sign EVERY embedded framework in Frameworks/ before signing the app.
+Do not apply JIT entitlements to the library frameworks themselves.
+An unsigned IPA does not carry effective entitlements.
+Use iOS 26+ on an arm64 physical device. Enable Developer Mode as needed
+by the signing method. StikDebug is a separate app and is not bundled.
+Use the universal.js protocol where TXM/SPTM is present. A successful URL
+launch does not prove JIT readiness. Check the app's diagnostics.
+The JIT allocator is experimental and requires real-device validation.
+No legacy JIT or interpreter fallback is provided.
+For development in Xcode, do not use an ordinary LLDB attachment as the
+universal script: unhandled brk instructions terminate the process.
+Corresponding source: obtain the repository at the same revision as this
+workflow run, including ThirdParty/StikJITProtocol and license notices.
+Also retain AndroidEmu-engine-source.tar.gz, which contains the actual
+prepared QEMU source, dependency sources, and cross-build inputs.
