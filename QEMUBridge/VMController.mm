@@ -105,7 +105,7 @@ static std::string optionPath(NSString *path) {
             scene = (UIWindowScene *)candidate; break;
         }
     }
-    CGSize panel = scene ? scene.coordinateSpace.bounds.size : CGSizeMake(540, 960);
+    CGSize panel = scene ? scene.effectiveGeometry.coordinateSpace.bounds.size : CGSizeMake(540, 960);
     uint32_t height = (uint32_t)(MIN(1600, MAX(480, _width * panel.height / MAX(panel.width, 1))) / 2) * 2;
     if (self.isViewLoaded && height != _height) { self.view = nil; _display = nil; _input = nil; }
     _height = height;

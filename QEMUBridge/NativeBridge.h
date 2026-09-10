@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ANDROIDEMU_NATIVEBRIDGE_H
+#define ANDROIDEMU_NATIVEBRIDGE_H
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -25,3 +26,5 @@ size_t AEJITArenaSize(void);
 #ifdef __OBJC__
 #import "VMController.h"
 #endif
+
+#endif // ANDROIDEMU_NATIVEBRIDGE_H
