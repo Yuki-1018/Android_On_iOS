@@ -22,11 +22,13 @@
 
 ## この環境で実行した検証
 
+- CIで報告されたMesonの`Executables ... are not runnable`に対応し、QEMUのcross fileに`needs_exe_wrapper = true`を追加。macOS用のnative compiler/SDKとiOS用compilerを明示的に分離。Meson 1.5上で同じエラーを再現し、指定追加後に設定が成功する回帰テストを確認。GitHub Actions全体の再実行結果は未確認。
+
 - GCC 13でQEMU 10 + Goldfish shared libraryを`--enable-werror`でビルド。
 - 実QEMUのGoldfish結合テスト8件成功。NAND読み書きと永続化、system保護、batch入力保存、MMIO再入拒否、timer/VSYNC/音声IRQ、input capabilities、pipe framingを確認。
 - アプリと同じ埋め込みABIの結合テスト1件成功。外部RW/RX arena、ARM命令、540×1170 framebufferの画素、PCM、serial、input callback、ADB双方向転送、一時停止／再開／停止、再起動拒否、TCG容量を確認。
 - Clang 18 / C++20 / ASan・UBSanでnative coreとADBの2テスト実行ファイルが成功。ADBでは分割read/write、AUTH署名／公開鍵の順序、shell、17,001-byte sync転送、キャンセル、RSA Montgomery形式を検証。
-- Python toolingテスト13件成功。framework依存closure、macOS／他architecture／host依存の拒否、IPA内のarm64エンジンの必須検査、host launcher、project再生成を確認。
+- Python toolingテスト15件成功（Meson 1.5を指定）。framework依存closure、macOS／他architecture／host依存の拒否、IPA内のarm64エンジンの必須検査、host launcher、project再生成を確認。
 - shell/Python構文、固定UTMからの最小cross-build script生成を確認。
 
 QEMUテストは合成したARM命令とデータだけを使用します。Androidの画面・boot_completed・Launcherを模擬して成功扱いにはしていません。

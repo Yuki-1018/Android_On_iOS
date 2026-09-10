@@ -37,6 +37,7 @@ jobs:
           bash scripts/build_qemu_host.sh 2>&1 | tee qemu-build.log
       - name: Exercise actual MMIO and TCG boot path without Android images
         run: |
+          MESON="$PWD/build/qemu-host/pyvenv/bin/meson" python3 -m unittest discover -s Tests -p 'test_cross_build.py' -v
           python3 Tests/QEMU/test_goldfish.py
           python3 Tests/QEMU/test_embedded.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -65,7 +66,10 @@ jobs:
           build/tools-venv/bin/pip install setuptools six pyparsing pyyaml distlib mako
           echo "$PWD/build/tools-venv/bin" >> "$GITHUB_PATH"
       - name: Compile arm64 iOS core and Goldfish engine
-        run: bash scripts/build_dependencies.sh
+        shell: bash
+        run: |
+          set -o pipefail
+          bash scripts/build_dependencies.sh 2>&1 | tee build-dependencies.log
       - name: Build unsigned iPhoneOS application
         shell: bash
         run: |
@@ -88,5 +92,11 @@ jobs:
           name: build-diagnostics
           path: |
             build-ios.log
+            build-dependencies.log
+            build/qemu-ios/config.log
+            build/qemu-ios/config-meson.*
+            build/qemu-ios/meson-logs/
+            build/ios-dependencies/**/config.log
+            build/ios-dependencies/**/meson-logs/
             build/DerivedData/Build/Products/Release-iphoneos/*.dSYM
           if-no-files-found: ignore

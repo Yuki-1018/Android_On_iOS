@@ -5,6 +5,14 @@ repo_dir="$PWD"
 [[ "$(uname -s)" == Darwin ]] || { echo 'iOS engine compilation requires macOS and Xcode 26.' >&2; exit 1; }
 ios_sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
 [[ "${ios_sdk_version%%.*}" -ge 26 ]] || { echo 'Select Xcode with iPhoneOS SDK 26 or newer.' >&2; exit 1; }
+macos_cc="$(xcrun --sdk macosx --find clang)"
+macos_cxx="$(xcrun --sdk macosx --find clang++)"
+macos_sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+# Keep native generators independent of inherited device SDK/compiler flags.
+unset SDKROOT CC CXX OBJC CFLAGS CXXFLAGS OBJCFLAGS CPPFLAGS LDFLAGS
+export CC_FOR_BUILD="$macos_cc" CXX_FOR_BUILD="$macos_cxx"
+export CFLAGS_FOR_BUILD="-isysroot $macos_sdk_path"
+export CXXFLAGS_FOR_BUILD="$CFLAGS_FOR_BUILD" LDFLAGS_FOR_BUILD="$CFLAGS_FOR_BUILD"
 for reference in qemu UTM; do
   if [[ ! -d "ThirdParty/checkouts/$reference/.git" ]]; then python3 scripts/fetch_references.py --only "$reference"; fi
 done
@@ -28,6 +36,7 @@ mkdir -p build/qemu-ios
 cd build/qemu-ios
 "$repo_dir/ThirdParty/checkouts/qemu/configure" --prefix="$ios_prefix" \
   --cc="$ios_cc" --cxx="$ios_cxx" --cpu=aarch64 --cross-prefix= \
+  --host-cc="$macos_cc -isysroot $macos_sdk_path" \
   --extra-cflags="$ios_flags" --extra-cxxflags="$ios_flags" --extra-ldflags="$ios_ldflags" \
   --target-list=arm-softmmu --without-default-devices --enable-shared-lib -Db_staticpic=true \
   --enable-ucontext --with-coroutine=libucontext --enable-slirp --enable-pixman \
