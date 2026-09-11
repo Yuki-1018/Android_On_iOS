@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 app="${1:-build/DerivedData/Build/Products/Release-iphoneos/AndroidEmu.app}"
 [[ -f "$app/AndroidEmu" && -f "$app/Info.plist" ]] || { echo "Build AndroidEmu.app first" >&2; exit 1; }
-xcrun lipo -verify_arch arm64 "$app/AndroidEmu"
+xcrun lipo "$app/AndroidEmu" -verify_arch arm64
 if codesign --verify "$app" 2>/dev/null; then
   echo "Expected an unsigned app; refusing to package signed content" >&2
   exit 1
