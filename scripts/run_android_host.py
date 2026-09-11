@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot a user-owned, raw API 22 Goldfish bundle with the development host engine.
+"""Boot a user-owned, raw Android 4–6 ARMv7 Goldfish ext4 bundle with the development host engine.
 
 No image download, conversion, formatting or network listener is performed.
 Guest serial output goes to this terminal; display can be inspected via local QMP.
@@ -34,11 +34,22 @@ def arguments(folder, ram=640, cache=192, qmp=None):
         if key in values and values[key] != value:
             raise ValueError('Conflicting SDK metadata')
         values[key] = value
-    for key, expected in [('AndroidVersion.ApiLevel', '22'), ('SystemImage.Abi', 'armeabi-v7a'), ('SystemImage.TagId', 'default')]:
-        if values.get(key) != expected:
-            raise ValueError(f'{key} must be {expected}')
-    if 'Platform.Version' in values and values['Platform.Version'] != '5.1.1':
-        raise ValueError('Only Android 5.1.1 is supported')
+    versions = {14: '4.0', 15: '4.0', 16: '4.1', 17: '4.2', 18: '4.3', 19: '4.4', 21: '5.0', 22: '5.1', 23: '6.0'}
+    try:
+        api = int(values.get('AndroidVersion.ApiLevel', ''))
+    except ValueError:
+        raise ValueError('Missing Android API level')
+    if api not in versions or values.get('SystemImage.Abi') != 'armeabi-v7a':
+        raise ValueError('Expected Android 4–6 ARMv7 Goldfish metadata')
+    tag = values.get('SystemImage.TagId')
+    if tag != 'default' and not (tag is None and api <= 18):
+        raise ValueError('Expected default system image')
+    version = values.get('Platform.Version', versions[api])
+    if version != versions[api] and not version.startswith(versions[api] + '.'):
+        raise ValueError('Conflicting Android API/version')
+    for key, expected in [('hw.cpu.arch', 'arm'), ('hw.board', 'goldfish')]:
+        if values.get(key, expected) != expected:
+            raise ValueError('Expected ARM Goldfish board')
     kernel = folder / ('kernel-qemu' if (folder / 'kernel-qemu').exists() else 'kernel')
     files = [kernel, folder / 'ramdisk.img', folder / 'system.img', folder / 'userdata.img']
     if os.path.lexists(folder / 'cache.img'):

@@ -14,7 +14,7 @@ actor ImageStore {
         _ = try regularFile(manifest, maximum: 65536)
         let data = try Data(contentsOf: manifest)
         let result = try JSONDecoder().decode(ImageManifest.self, from: data)
-        guard result.schema == 1, result.profile == ImageProfile.identifier else { throw EmuError.image("非対応の保存イメージです。") }
+        guard result.schema == 1, ImageProfile.api(for: result.profile) != nil else { throw EmuError.image("非対応の保存イメージです。") }
         for name in ["kernel", "ramdisk.img", "system.img", "userdata.img"] {
             guard let entry = result.files.first(where: { $0.name == name }), entry.bytes > 0,
                   try regularFile(root.appendingPathComponent(name), maximum: 8 << 30) == entry.bytes else {
@@ -122,6 +122,14 @@ actor ImageStore {
                 let message = error.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
                 throw EmuError.image("\(sourceName): \(message)")
             }
+            if ["system.img", "userdata.img", "cache.img"].contains(targetName) {
+                let disk = try FileHandle(forReadingFrom: dst)
+                defer { try? disk.close() }
+                try disk.seek(toOffset: 1080)
+                guard try disk.read(upToCount: 2) == Data([0x53, 0xef]) else {
+                    throw EmuError.image("\(targetName)はext4ではありません。YAFFS2/F2FS形式の古いイメージは現在非対応です。")
+                }
+            }
             let size = try regularFile(dst, maximum: limit)
             total += size
             guard total <= 16 << 30 else { throw EmuError.image("展開後の合計サイズが16 GiBを超えています。") }
@@ -130,7 +138,7 @@ actor ImageStore {
                 try manager.setAttributes([.posixPermissions: 0o400], ofItemAtPath: dst.path)
             }
         }
-        let manifest = ImageManifest(schema: 1, profile: ImageProfile.identifier, importedAt: Date(), files: records)
+        let manifest = ImageManifest(schema: 1, profile: ImageProfile.identifier(api: Int(metadata["AndroidVersion.ApiLevel"]!)!), importedAt: Date(), files: records)
         try JSONEncoder().encode(manifest).write(to: stage.appendingPathComponent("image.json"), options: .atomic)
         try Task.checkCancellation()
         if manager.fileExists(atPath: root.path) { _ = try manager.replaceItemAt(root, withItemAt: stage) }

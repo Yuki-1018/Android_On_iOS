@@ -26,9 +26,26 @@ final class ModelTests: XCTestCase {
         XCTAssertNoThrow(try ImageProfile.validate(properties))
         var wrong = properties; wrong["SystemImage.Abi"] = "arm64-v8a"
         XCTAssertThrowsError(try ImageProfile.validate(wrong))
-        wrong = properties; wrong["AndroidVersion.ApiLevel"] = "23"
+        wrong = properties; wrong["AndroidVersion.ApiLevel"] = "24"
         XCTAssertThrowsError(try ImageProfile.validate(wrong))
         XCTAssertThrowsError(try ImageProfile.validate([:]))
         XCTAssertThrowsError(try ImageProfile.properties("a=1\na=2"))
     }
+    func testAndroidProfilesAndLegacyManifest() throws {
+        XCTAssertEqual(ImageProfile.api(for: "android-5.1.1-api22-armv7-goldfish"), 22)
+        for api in [14, 15, 16, 17, 18, 19, 21, 22, 23] {
+            var values = ["AndroidVersion.ApiLevel": String(api), "SystemImage.Abi": "armeabi-v7a", "SystemImage.TagId": "default"]
+            XCTAssertNoThrow(try ImageProfile.validate(values))
+            XCTAssertEqual(ImageProfile.api(for: ImageProfile.identifier(api: api)), api)
+            values["SystemImage.Abi"] = "arm64-v8a"
+            XCTAssertThrowsError(try ImageProfile.validate(values))
+        }
+        XCTAssertNoThrow(try ImageProfile.validate(["AndroidVersion.ApiLevel": "16", "SystemImage.Abi": "armeabi-v7a"]))
+        XCTAssertThrowsError(try ImageProfile.validate(["AndroidVersion.ApiLevel": "23", "SystemImage.Abi": "armeabi-v7a"]))
+        let legacyURL = try JITRequest.url(bundleID: "org.example.test", pid: 123, requiresProtocol: false)
+        XCTAssertFalse(legacyURL.absoluteString.contains("universal.js"))
+        let modernURL = try JITRequest.url(bundleID: "org.example.test", pid: 123, requiresProtocol: true)
+        XCTAssertTrue(modernURL.absoluteString.contains("universal.js"))
+    }
+
 }

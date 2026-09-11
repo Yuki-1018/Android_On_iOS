@@ -10,10 +10,14 @@ enum JITRequest {
         guard !bundleID.isEmpty, pid > 0, txm != .unknown, sptm != .unknown else {
             throw EmuError.jit("TXM/SPTMまたはプロセス情報を確認できません。JITは開始していません。")
         }
+        return try url(bundleID: bundleID, pid: pid, requiresProtocol: txm == .present || sptm == .present)
+    }
+    static func url(bundleID: String, pid: Int32, requiresProtocol: Bool) throws -> URL {
+        guard !bundleID.isEmpty, pid > 0 else { throw EmuError.jit("プロセス情報が不正です。") }
         var parts = URLComponents()
         parts.scheme = "stikdebug"; parts.host = "enable-jit"
         parts.queryItems = [.init(name: "bundle-id", value: bundleID), .init(name: "pid", value: String(pid))]
-        if txm == .present || sptm == .present { parts.queryItems?.append(.init(name: "script-name", value: "universal.js")) }
+        if requiresProtocol { parts.queryItems?.append(.init(name: "script-name", value: "universal.js")) }
         guard let url = parts.url else { throw EmuError.jit("StikDebug URLを作成できません。") }
         return url
     }

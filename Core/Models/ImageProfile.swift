@@ -15,21 +15,34 @@ enum ImageProfile {
         }
         return values
     }
+    static let versions: [Int: String] = [14: "4.0", 15: "4.0", 16: "4.1", 17: "4.2", 18: "4.3", 19: "4.4", 21: "5.0", 22: "5.1", 23: "6.0"]
+    static func identifier(api: Int) -> String {
+        api == 22 ? identifier : "android-api\(api)-armv7-goldfish"
+    }
+    static func api(for identifier: String) -> Int? {
+        versions.keys.first { self.identifier(api: $0) == identifier }
+    }
+    static func label(for identifier: String) -> String {
+        guard let api = api(for: identifier), let version = versions[api] else { return "Android" }
+        return "Android \(version) · API \(api)"
+    }
     static func validate(_ properties: [String: String]) throws {
-        // Metadata is evidence of compatibility, not a cryptographic identity guarantee.
-        for (key, expected) in [("AndroidVersion.ApiLevel", "22"), ("SystemImage.Abi", "armeabi-v7a"),
-                                ("SystemImage.TagId", "default"), ("Platform.Version", "5.1.1"),
-                                ("hw.cpu.arch", "arm"), ("hw.board", "goldfish")] {
-            if let actual = properties[key], actual != expected {
-                throw EmuError.image("非対応イメージ: \(key)=\(actual)。必要値は\(expected)です。")
-            }
+        guard let raw = properties["AndroidVersion.ApiLevel"], let api = Int(raw),
+              let version = versions[api], properties["SystemImage.Abi"] == "armeabi-v7a" else {
+            throw EmuError.image("Android 4〜6のARMv7 Goldfishイメージと元のsource.propertiesが必要です。")
         }
-        guard properties["AndroidVersion.ApiLevel"] == "22",
-              properties["SystemImage.Abi"] == "armeabi-v7a",
-              properties["SystemImage.TagId"] == "default" else {
-            throw EmuError.image("source.propertiesでAPI 22 / armeabi-v7a / defaultを確認できません。SDKの元メタデータを含むフォルダを選択してください。")
+        let tag = properties["SystemImage.TagId"]
+        guard tag == "default" || (tag == nil && api <= 18) else {
+            throw EmuError.image("defaultのシステムイメージを選択してください。Google APIs・Wearは対象外です。")
+        }
+        for (key, expected) in [("hw.cpu.arch", "arm"), ("hw.board", "goldfish")] {
+            if let value = properties[key], value != expected { throw EmuError.image("非対応イメージ: \(key)=\(value)") }
+        }
+        if let value = properties["Platform.Version"], value != version && !value.hasPrefix(version + ".") {
+            throw EmuError.image("APIレベルとAndroidバージョンが一致しません。")
         }
     }
+
 }
 
 struct ImageManifest: Codable, Sendable {

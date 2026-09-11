@@ -45,6 +45,9 @@ def package(engine, prefix, destination):
         commands = run('xcrun', 'vtool', '-show-build', str(path))
         if not re.search(r'platform\s+(IOS|2)\b', commands):
             raise ValueError(f'Expected iPhoneOS Mach-O: {path}')
+        minimum = re.search(r'minos\s+(\d+)\.(\d+)', commands)
+        if not minimum or tuple(map(int, minimum.groups())) > (17, 0):
+            raise ValueError(f'Framework requires a newer iOS than 17.0: {path}')
         if main:
             verify_engine_exports(path)
         closure[path] = name
@@ -82,7 +85,7 @@ def package(engine, prefix, destination):
         (folder / 'Info.plist').write_bytes(plistlib.dumps({
             'CFBundleExecutable': name, 'CFBundleIdentifier': 'org.androidemu.engine.' + name.replace('_', '-'),
             'CFBundlePackageType': 'FMWK', 'CFBundleShortVersionString': '1.0', 'CFBundleVersion': '1',
-            'MinimumOSVersion': '26.0', 'CFBundleSupportedPlatforms': ['iPhoneOS']}))
+            'MinimumOSVersion': '17.0', 'CFBundleSupportedPlatforms': ['iPhoneOS']}))
     (destination / 'engine-manifest.json').write_text(json.dumps({'frameworks': sorted(closure.values())}, indent=2) + '\n')
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 # AndroidEmu
 
-`CODEX_ANDROID_EMULATOR_COMPLETE.md`を目標とする、iOS 26+実機arm64向けAndroid 5.1.1 / API 22 / ARMv7 Goldfishエミュレータです。
+`CODEX_ANDROID_EMULATOR_COMPLETE.md`を目標とする、iOS 17+実機arm64向けAndroid 5.1.1 / API 22 / ARMv7 Goldfishエミュレータです。
 
 iOS用の全画面Runtime、QEMU shared library起動、modern JIT領域の受け渡し、Metal描画、タッチ、音声、NAT、ADB/APK操作を実装しています。**Linuxで埋め込みエンジンを検証しましたが、iOSビルド・実機でのAndroid起動・Launcher到達は未確認です。** 詳しい到達点は[実装状況](IMPLEMENTATION_STATUS.md)を参照してください。
 
@@ -36,7 +36,7 @@ ZIPを展開してからフォルダを選択します。`source.properties`で`
 
 ## JIT
 
-iOS 26+実機と、再署名時の`get-task-allow=true`が必要です。StikDebugは別アプリです。TXM/SPTMに応じたuniversal protocolでRW/RX aliasを準備し、生成コードの実行検査後に同じ領域をTCGへ渡します。古いJIT方式やTCIへのフォールバックはありません。
+iOS 17+実機と、再署名時の`get-task-allow=true`が必要です。StikDebugは別アプリです。TXM/SPTMに応じたuniversal protocolでRW/RX aliasを準備し、生成コードの実行検査後に同じ領域をTCGへ渡します。古いJIT方式やTCIへのフォールバックはありません。
 
 URL起動成功だけではReadyにしません。通常のLLDBはuniversal scriptの代わりにならず、未処理のbreakpointで終了する場合があります。領域準備後のcache変更や失敗後の再準備にはアプリの再起動が必要です。実機でのTXM/SPTM検証はまだ行えていません。
 
@@ -96,3 +96,9 @@ systemはread-only、userdata/cacheは書き込み可能です。作業用コピ
 - 性能表示は実カウンタです。未測定のinput-to-photonや架空のFPSは表示しません。
 
 ライセンスと出典は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)、[ThirdParty/README.md](ThirdParty/README.md)、[Goldfish integration](ThirdParty/AndroidQemuCompat/README.md)を参照してください。
+
+### JITとゲストバージョンの追加対応
+
+StikDebugから直接起動・復帰した場合も、デバッガによるJIT許可を自動監視し、領域準備と自己テストを行います。「Enable with StikDebug」は削除しました。通常のAndroid起動ボタンからのStikDebug連携は維持しています。iOS17/18ではlegacy経路、iOS26以降ではTXM/SPTM検出に応じたuniversal経路を使用します。最低OSをアプリ・core・QEMU・依存frameworkすべて17.0へ統一し、17.0より新しいOSを要求するframeworkはパッケージ時に拒否します。ビルドには引き続きXcode26 SDKが必要です。この変更の実機検証は未完了です。
+
+イメージ受付はAPI14/15/16/17/18/19/21/22/23のARMv7 Goldfishへ拡大しました。defaultイメージが対象で、古いAPI18以前はタグ省略も許可します。Google APIs、Wear、x86、arm64、Ranchu、YAFFS2/F2FSは対象外です。ext4形式を読み取りで検査し、不適合なイメージを上書き変換しません。ユーザーから起動確認が得られているのはAndroid5.1.1であり、4系・6系の互換性は検証中です。

@@ -57,6 +57,12 @@ class HostLauncherTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 host.arguments(self.folder)
 
+    def test_android4_and_android6_metadata(self):
+        for api in [14, 19, 21, 23]:
+            (self.folder / 'source.properties').write_text(
+                f'AndroidVersion.ApiLevel={api}\nSystemImage.Abi=armeabi-v7a\nSystemImage.TagId=default\n')
+            self.assertIn('cortex-a8', host.arguments(self.folder))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -30,8 +30,8 @@ ios_cxx="$(xcrun --sdk iphoneos --find clang++)"
 export PKG_CONFIG="$ios_prefix/host/bin/pkg-config"
 export PKG_CONFIG_LIBDIR="$ios_prefix/lib/pkgconfig:$ios_prefix/share/pkgconfig"
 export PKG_CONFIG_PATH=""
-ios_flags="-target arm64-apple-ios26.0 -isysroot $ios_sdk_path -I$ios_prefix/include"
-ios_ldflags="-target arm64-apple-ios26.0 -isysroot $ios_sdk_path -L$ios_prefix/lib -Wl,-headerpad_max_install_names"
+ios_flags="-target arm64-apple-ios17.0 -isysroot $ios_sdk_path -I$ios_prefix/include"
+ios_ldflags="-target arm64-apple-ios17.0 -isysroot $ios_sdk_path -L$ios_prefix/lib -Wl,-headerpad_max_install_names"
 mkdir -p build/qemu-ios
 cd build/qemu-ios
 "$repo_dir/ThirdParty/checkouts/qemu/configure" --prefix="$ios_prefix" \

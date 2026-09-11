@@ -53,3 +53,13 @@ bool AEIsDebugged(void) {
 }
 int AETXMPresence(void) { return memoryMapFeature(CFSTR("TXM")); }
 int AESPTMPresence(void) { return memoryMapFeature(CFSTR("SPTM")); }
+
+int AEJITProtocolMode(void) {
+    if (__builtin_available(iOS 26.0, *)) {
+        const int txm = AETXMPresence(), sptm = AESPTMPresence();
+        if (txm < 0 || sptm < 0) return -1;
+        return txm == 1 || sptm == 1 ? 1 : 0;
+    }
+    // Pre-iOS26 debugger-enabled JIT uses the legacy VM mapping path.
+    return 0;
+}

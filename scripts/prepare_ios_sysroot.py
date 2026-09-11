@@ -16,7 +16,7 @@ def generate():
     if subprocess.check_output(['git', '-C', str(UTM), 'rev-parse', 'HEAD'], text=True).strip() != REVISION:
         raise ValueError('Unexpected UTM build-input revision')
     script = (UTM / 'scripts/build_dependencies.sh').read_text()
-    script = script.replace('IOS_SDKMINVER="14.0"', 'IOS_SDKMINVER="26.0"')
+    script = script.replace('IOS_SDKMINVER="14.0"', 'IOS_SDKMINVER="17.0"')
     script = script.replace('PATCHES_DIR="$BASEDIR/../patches"', 'PATCHES_DIR="${ANDROID51_UTM_ROOT:?}/patches"')
     script = script.replace('source "$PATCHES_DIR/sources"', 'source "$PATCHES_DIR/sources"\nICONV_SRC="${ICONV_SRC/http:/https:}"\nGETTEXT_SRC="${GETTEXT_SRC/http:/https:}"')
     overrides = r'''

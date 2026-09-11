@@ -14,7 +14,7 @@ struct LibraryView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("Android 5.1.1", systemImage: "apps.iphone")
+                    Label(model.manifest.map { ImageProfile.label(for: $0.profile) } ?? "Android 4〜6", systemImage: "apps.iphone")
                         .font(.title2.bold())
                     Text("アプリや設定はこの端末に保存されます").foregroundStyle(.secondary)
                     if let manifest = model.manifest {
@@ -26,7 +26,7 @@ struct LibraryView: View {
                         .disabled(model.importing || jit.state == .preparing || runtime.controller.started || runtime.preparing)
                     if model.importing { ProgressView("コピー・変換・SHA-256検証中…") }
                 } footer: {
-                    Text("合法的に利用可能なAPI 22 default / armeabi-v7aイメージのフォルダを選択してください。source.propertiesが必要です。データは端末内に保存されます。")
+                    Text("合法的に利用可能なAndroid 4〜6のdefault / armeabi-v7a / Goldfish / ext4イメージのフォルダを選択してください。source.propertiesが必要です。データは端末内に保存されます。起動確認済みは5.1.1で、4系・6系は互換性検証中です。")
                 }
                 Section {
                     Button("Androidを起動", systemImage: "play.fill") {
@@ -68,8 +68,6 @@ struct LibraryView: View {
                                 LabeledContent("SPTM", value: jit.sptm.label)
                                 LabeledContent("get-task-allow", value: jit.entitlement ? "Available" : "Missing")
                                 Text(jit.detail).font(.footnote).textSelection(.enabled)
-                                Button("Enable with StikDebug") { jit.enable(cache: model.configuration.cache, openStikDebug: true) }
-                                    .disabled(jit.state == .preparing || jit.state == .ready)
                                 Button("Wait for Compatible Debugger") { jit.enable(cache: model.configuration.cache, openStikDebug: false) }
                                     .disabled(jit.state == .preparing || jit.state == .ready)
                             }
@@ -81,16 +79,18 @@ struct LibraryView: View {
             .navigationTitle("AndroidEmu")
             .fullScreenCover(isPresented: $showRuntime) { RuntimeView(runtime: runtime) }
             .sheet(isPresented: $chooseImage) { ImageDirectoryPicker { model.importImage($0) } }
-            .task { await model.load(); jit.refresh() }
+            .task { await model.load(); jit.refresh(); jit.observe(cache: model.configuration.cache) }
             .confirmationDialog("イメージを置き換えると、保存したAndroidのアプリとデータも置き換わります。", isPresented: $confirmReplace, titleVisibility: .visible) {
                 Button("置き換える", role: .destructive) { chooseImage = true }
             }
+            .onChange(of: model.configuration.cache) { _, cache in jit.observe(cache: cache) }
             .onChange(of: jit.state) { _, state in
                 if state == .ready && launchWhenReady && scenePhase == .active { launchWhenReady = false; launch() }
                 if state == .failed { launchWhenReady = false; model.errorMessage = jit.detail }
             }
             .onChange(of: scenePhase) { _, phase in if phase == .active {
                 jit.refresh()
+                jit.observe(cache: model.configuration.cache)
                 if launchWhenReady && jit.state == .ready { launchWhenReady = false; launch() }
             } }
             .alert("処理できませんでした", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {

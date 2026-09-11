@@ -23,6 +23,7 @@ class EnginePackagingTests(unittest.TestCase):
         self.glib.write_bytes(b'dependency fixture')
         self.destination = root / 'frameworks'
         self.platform = 'IOS'
+        self.minimum = '17.0'
         self.architecture = 'arm64'
         self.foreign = None
         self.missing_exports = set()
@@ -31,7 +32,7 @@ class EnginePackagingTests(unittest.TestCase):
         if args[:2] == ('xcrun', 'nm'):
             return ''.join('_' + name + '\n' for name in sorted(package.REQUIRED_ENGINE_SYMBOLS - self.missing_exports))
         if args[:2] == ('xcrun', 'lipo'): return self.architecture + '\n'
-        if args[:2] == ('xcrun', 'vtool'): return 'platform ' + self.platform + '\n'
+        if args[:2] == ('xcrun', 'vtool'): return 'platform ' + self.platform + '\nminos ' + self.minimum + '\n'
         if args[:2] == ('otool', '-L'):
             path = Path(args[2])
             result = f'{path}:\n  {path} (compatibility version 1.0.0)\n'
@@ -82,3 +83,8 @@ class EnginePackagingTests(unittest.TestCase):
         with patch.object(package, 'run', lose_export), patch.object(package.subprocess, 'run'):
             with self.assertRaisesRegex(ValueError, 'missing application exports'):
                 package.package(self.engine, self.prefix, self.destination)
+
+    def test_rejects_stale_ios26_dependency(self):
+        self.minimum = '26.0'
+        with self.assertRaisesRegex(ValueError, 'newer iOS'):
+            self.invoke()

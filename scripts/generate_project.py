@@ -43,7 +43,7 @@ def generate():
     obj('frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ({",".join(framework_builds)},); runOnlyForDeploymentPostprocessing = 0;')
     obj('resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({",".join(resource_builds)},); runOnlyForDeploymentPostprocessing = 0;')
     common = {
-        'SDKROOT': 'iphoneos', 'IPHONEOS_DEPLOYMENT_TARGET': '26.0', 'ARCHS': 'arm64',
+        'SDKROOT': 'iphoneos', 'IPHONEOS_DEPLOYMENT_TARGET': '17.0', 'ARCHS': 'arm64',
         'SUPPORTED_PLATFORMS': 'iphoneos', 'SUPPORTS_MACCATALYST': 'NO', 'TARGETED_DEVICE_FAMILY': '1,2',
         'SWIFT_VERSION': '5.0', 'CLANG_CXX_LANGUAGE_STANDARD': 'c++20', 'CLANG_CXX_LIBRARY': 'libc++',
         'CLANG_ENABLE_OBJC_ARC': 'YES', 'GCC_WARN_INHIBIT_ALL_WARNINGS': 'NO',

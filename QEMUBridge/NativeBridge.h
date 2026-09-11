@@ -13,6 +13,8 @@ bool AEIsDebuggerAttached(void);
 // -1 means unknown. Never interpret unknown as absent.
 int AETXMPresence(void);
 int AESPTMPresence(void);
+// -1 unknown, 0 legacy debugger-enabled mappings, 1 universal protocol.
+int AEJITProtocolMode(void);
 // Only call with universal script attached when needsProtocol is true.
 bool AEPrepareJITArena(size_t bytes, bool needsProtocol, char *error, size_t errorCapacity);
 bool AEJITArenaReady(void);

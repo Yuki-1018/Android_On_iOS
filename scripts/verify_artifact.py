@@ -41,8 +41,8 @@ def verify(path):
         if info_entry.file_size > 65536:
             raise ValueError('Oversized app plist')
         info = plistlib.loads(archive.read(info_entry))
-        if info.get('MinimumOSVersion', '').split('.')[0] != '26':
-            raise ValueError('Expected iOS 26 deployment target')
+        if info.get('MinimumOSVersion', '').split('.')[0] != '17':
+            raise ValueError('Expected iOS 17 deployment target')
         if info.get('CFBundleExecutable') != 'AndroidEmu':
             raise ValueError('Unexpected executable')
         if 'stikdebug' not in info.get('LSApplicationQueriesSchemes', []):

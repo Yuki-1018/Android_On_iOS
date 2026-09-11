@@ -77,3 +77,11 @@ iOS起動前にcache.imgがない場合、アプリ内の空の64MiB ext4テン�
 QEMUをWerrorで再ビルドし、Goldfish10件・埋め込みライフサイクル1件、ASan/UBSan native2件に成功。native側ではSE/ノッチ端末/iPad/狭いウィンドウに相当するviewportで座標変換を確認しましたが、UIKit/Metalの実機テストの代わりではありません。FPSや入力遅延の改善率は未測定です。
 
 参照: https://android.googlesource.com/platform/frameworks/base/+/android-5.1.1_r38/data/keyboards/qwerty2.idc
+
+## StikDebug直接起動・旧iOS・Androidバージョン受付
+
+起動/foreground復帰時に250ms間隔のプロセス状態監視を開始し、CS_DEBUGGEDを確認すると手動Wait操作なしでJIT領域を準備します。universal経路ではP_TRACEDも確認します。領域準備失敗後は自動で繰り返さず、Ready後は監視を終了します。旧経路ではTXM/SPTMのSPI取得失敗を開始の妨げにせず、iOS26以降の保護方式は取得失敗時に停止します。Enable with StikDebugボタンは削除し、Android起動ボタンの連携と詳細設定の手動Waitは維持しました。
+
+最低OSを17.0へ変更し、core/QEMU/依存sysroot/framework plistも統一。旧26.0向けframeworkが混ざるとパッケージ検査で失敗させます。iOS26専用scene geometry APIには可用性分岐を追加しました。iOS16以前は今回のビルド対象外です。旧/新方式とも、この変更を含む実機試験は未実施です。
+
+AndroidはAPI14〜23（Wear20を除く）のARMv7 Goldfish/ext4を受付対象とし、API別の保存profileを導入。旧API22 profileも読み込めます。APIとPlatform.Versionの矛盾、異なるCPU/board/tagを拒否し、system/userdata/cacheのextスーパーブロックを検査します。古い4系のYAFFS2・F2FSを含む全面的な対応は未実装です。受付条件の拡大はAndroid4/6の起動実証ではありません。SwiftモデルのAPI範囲・旧profile・JIT URLテストを追加しましたが、Swift/Xcodeの実行環境がないためローカルでは実行できていません。

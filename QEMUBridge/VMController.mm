@@ -134,7 +134,10 @@ static std::string optionPath(NSString *path) {
     UIWindow *window = self.viewIfLoaded.window ?: scene.keyWindow;
     if (window) {
         panel = UIEdgeInsetsInsetRect(window.bounds, window.safeAreaInsets).size;
-    } else if (scene) { panel = scene.effectiveGeometry.coordinateSpace.bounds.size; }
+    } else if (scene) {
+        if (@available(iOS 26.0, *)) { panel = scene.effectiveGeometry.coordinateSpace.bounds.size; }
+        else { panel = scene.coordinateSpace.bounds.size; }
+    }
     // Goldfish cannot hotplug panel geometry. Keep a portrait virtual panel;
     // window rotation/resizing aspect-fits it without cropping or coordinate drift.
     if (panel.width > panel.height) { panel = CGSizeMake(panel.height, panel.width); }

@@ -17,7 +17,7 @@ spec.loader.exec_module(verify)
 
 class ArtifactTests(unittest.TestCase):
     def make_ipa(self, path, extra=None, cache=True):
-        info = {'MinimumOSVersion': '26.0', 'CFBundleExecutable': 'AndroidEmu', 'LSApplicationQueriesSchemes': ['stikdebug']}
+        info = {'MinimumOSVersion': '17.0', 'CFBundleExecutable': 'AndroidEmu', 'LSApplicationQueriesSchemes': ['stikdebug']}
         with zipfile.ZipFile(path, 'w') as archive:
             if cache:
                 archive.writestr('Payload/AndroidEmu.app/cache-template.sparse',

@@ -46,9 +46,9 @@ bool AEPrepareJITArena(size_t bytes, bool needsProtocol, char* error, size_t cap
     }
     if (attempted) return fail("JIT preparation already attempted; restart the app to retry");
     if (!AEHasGetTaskAllow()) return fail("get-task-allow entitlement missing");
-    const int txm = AETXMPresence(), sptm = AESPTMPresence();
-    if (txm < 0 || sptm < 0) return fail("TXM/SPTM detection unavailable");
-    if (needsProtocol != (txm == 1 || sptm == 1)) return fail("JIT protocol does not match detected memory protection");
+    const int mode = AEJITProtocolMode();
+    if (mode < 0) return fail("JIT memory protection detection unavailable");
+    if (needsProtocol != (mode == 1)) return fail("JIT protocol does not match detected memory protection");
     if (!AEIsDebugged()) return fail("Debugger has not enabled JIT");
     if (needsProtocol && !debuggerAttached()) return fail("Universal debugger script must remain attached during preparation");
     if (bytes != 128UL << 20 && bytes != 192UL << 20 && bytes != 256UL << 20) return fail("Unsupported TCG cache size");

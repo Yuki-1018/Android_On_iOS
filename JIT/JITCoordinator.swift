@@ -9,6 +9,32 @@ import UIKit
     @Published private(set) var entitlement = false
     @Published private(set) var detail = "JIT未準備"
     private var waiting: Task<Void, Never>?
+    private var observer: Task<Void, Never>?
+    private var cache: VMConfiguration.Cache = .balanced
+    private var preparationFailed = false
+    private var automaticallyAttempted = false
+    // StikDebug may launch/attach directly without any button in this app.
+    // Observe the actual process flag; opening a URL is not evidence of JIT.
+    func observe(cache: VMConfiguration.Cache) {
+        self.cache = cache
+        guard observer == nil else { return }
+        observer = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                if AEJITArenaReady() {
+                    self.state = .ready
+                    self.detail = "JIT準備完了"
+                    self.observer = nil
+                    return
+                } else if UIApplication.shared.applicationState == .active &&
+                            AEIsDebugged() && !self.preparationFailed && !self.automaticallyAttempted && self.state != .preparing {
+                    self.automaticallyAttempted = true
+                    self.enable(cache: self.cache, openStikDebug: false)
+                }
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            }
+        }
+    }
     func refresh() {
         txm = FeaturePresence(rawValue: Int(AETXMPresence())) ?? .unknown
         sptm = FeaturePresence(rawValue: Int(AESPTMPresence())) ?? .unknown
@@ -19,10 +45,12 @@ import UIKit
         refresh()
         do {
             guard entitlement else { throw EmuError.jit("get-task-allowがありません。対応する署名方法で再インストールしてください。") }
-            let url = try JITRequest.url(bundleID: Bundle.main.bundleIdentifier ?? "", pid: getpid(), txm: txm, sptm: sptm)
-            if openStikDebug && !UIApplication.shared.canOpenURL(url) { throw EmuError.jit("StikDebugがインストールされていません。") }
+            let mode = AEJITProtocolMode()
+            guard mode >= 0 else { throw EmuError.jit("この端末のJIT保護方式を確認できません。") }
+            let protocolRequired = mode == 1
+            let url: URL? = openStikDebug ? try JITRequest.url(bundleID: Bundle.main.bundleIdentifier ?? "", pid: getpid(), requiresProtocol: protocolRequired) : nil
+            if let url, !UIApplication.shared.canOpenURL(url) { throw EmuError.jit("StikDebugがインストールされていません。") }
             state = .preparing; detail = "対応するdebuggerの接続を待っています（120秒）"
-            let protocolRequired = txm == .present || sptm == .present
             waiting = Task {
                 let deadline = ContinuousClock.now.advanced(by: .seconds(120))
                 while !Task.isCancelled && ContinuousClock.now < deadline {
@@ -33,15 +61,15 @@ import UIKit
                             let ok = AEPrepareJITArena(cache.rawValue << 20, protocolRequired, &message, capacity)
                             return ok ? nil : message.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
                         }.value
-                        if let result { self.state = .failed; self.detail = result }
-                        else { self.state = .ready; self.detail = "RX/RW領域準備・detach・実行テスト完了。TCG接続は別途必要です。" }
+                        if let result { self.preparationFailed = true; self.state = .failed; self.detail = result }
+                        else { self.state = .ready; self.detail = "JIT準備完了" }
                         return
                     }
                     do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
                 }
                 if !Task.isCancelled { self.state = .failed; self.detail = "JIT接続がタイムアウトしました。" }
             }
-            if openStikDebug {
+            if let url {
                 UIApplication.shared.open(url) { accepted in
                     if !accepted { Task { @MainActor in self.waiting?.cancel(); self.state = .failed; self.detail = "StikDebugを開けませんでした。" } }
                 }
