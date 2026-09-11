@@ -98,8 +98,8 @@ def child(directory):
     def inputs(ctx, events, capacity):
         results['inputPolls'] += 1
         if results['inputPolls'] == 1:
-            events[0] = Event(1, 172, 1); events[1] = Event(0, 0, 0)
-            events[2] = Event(1, 172, 0); events[3] = Event(0, 0, 0)
+            events[0] = Event(1, 102, 1); events[1] = Event(0, 0, 0)
+            events[2] = Event(1, 102, 0); events[3] = Event(0, 0, 0)
             return 4
         return 0
     @Bytes

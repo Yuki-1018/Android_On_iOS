@@ -83,12 +83,25 @@ void touchTests() {
     check(!emu::guestPoint({0, 100}, 200, 200, 100, 200, emu::Rotation::upright, false));
     p = emu::guestPoint({0, 0}, 200, 100, 100, 200, emu::Rotation::right, true);
     check(p && p->x == 0 && p->y == 199);
+    // Effective viewport dimensions after safe-area layout: SE, notched
+    // portrait/landscape, iPad full screen and narrow Stage Manager windows.
+    for (const auto size : {emu::Point{375, 667}, emu::Point{393, 759},
+                           emu::Point{759, 372}, emu::Point{1024, 1322}, emu::Point{460, 700}}) {
+        auto center = emu::guestPoint({size.x / 2, size.y / 2}, size.x, size.y, 360, 780, emu::Rotation::upright, false);
+        check(center && std::abs(center->x - 179.5) < 0.001 && std::abs(center->y - 389.5) < 0.001);
+        auto outside = emu::guestPoint({-1, -1}, size.x, size.y, 360, 780, emu::Rotation::upright, false);
+        check(!outside);
+    }
     emu::TouchInput input;
     for (uint64_t i = 0; i < 10; ++i) check(input.touch(i, emu::TouchPhase::down, int32_t(i), 20));
     check(!input.touch(10, emu::TouchPhase::down, 0, 0));
     check(!input.touch(0, emu::TouchPhase::down, 0, 0));
     std::array<emu::InputEvent, 128> events{};
     auto n = input.read(events); check(n == 51 && events[0].code == 330);
+    check(input.touch(0, emu::TouchPhase::move, 0, 20));
+    check(input.read(events) == 0); // No queue traffic for subpixel/stationary movement.
+    check(input.touch(0, emu::TouchPhase::move, 1, 20));
+    check(input.read(events) == 4);
     check(input.cancelAll()); n = input.read(events); check(n == 22 && events[0].code == 330 && events[0].value == 0);
     check(!input.touch(0, emu::TouchPhase::move, 1, 1));
     check(input.key(emu::HardwareKey::back, 1)); check(input.key(emu::HardwareKey::back, 0));

@@ -3,6 +3,7 @@
 #include "FrameMailbox.hpp"
 #include <memory>
 #include <atomic>
+#include <cmath>
 #include <os/signpost.h>
 #include <simd/simd.h>
 
@@ -36,6 +37,7 @@
     }
     _guestWidth = width; _guestHeight = height;
     self.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    self.autoResizeDrawable = NO;
     self.framebufferOnly = YES; self.preferredFramesPerSecond = 60;
     self.clearColor = MTLClearColorMake(0, 0, 0, 1);
     _commands = [device newCommandQueue];
@@ -56,6 +58,16 @@
     _needsPresent = true;
     self.delegate = self;
     return self;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGSize bounds = self.bounds.size;
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    // Upscaling the drawable to Retina resolution adds no guest detail. Limit
+    // fragment work to the guest pixel budget while keeping the window ratio.
+    double scale = MIN(self.contentScaleFactor, std::sqrt(double(_guestWidth) * _guestHeight / (bounds.width * bounds.height)));
+    CGSize pixels = CGSizeMake(MAX(1, std::floor(bounds.width * scale)), MAX(1, std::floor(bounds.height * scale)));
+    if (!CGSizeEqualToSize(pixels, self.drawableSize)) self.drawableSize = pixels;
 }
 - (BOOL)submitPixels:(const uint8_t *)pixels length:(size_t)length stride:(size_t)stride
                    x:(uint32_t)x y:(uint32_t)y width:(uint32_t)width height:(uint32_t)height {

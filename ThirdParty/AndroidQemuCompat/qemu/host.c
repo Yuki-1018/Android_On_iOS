@@ -12,6 +12,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/atomic.h"
 #include "qemu/rcu.h"
+#include "block/block-global-state.h"
 
 static Android51Host callbacks;
 static int started, stop_requested, pause_requested;
@@ -53,7 +54,8 @@ static void host_poll(void *opaque)
     if (wanted != paused) {
         if (wanted) { vm_stop(RUN_STATE_PAUSED); } else { vm_start(); }
         paused = wanted;
-        if (callbacks.state) { callbacks.state(callbacks.opaque, paused ? 2 : 3); }
+        bool saved = !paused || bdrv_flush_all() == 0;
+        if (callbacks.state) { callbacks.state(callbacks.opaque, !saved ? 5 : paused ? 2 : 3); }
     }
     if (pending_index == pending_count && callbacks.input) {
         pending_index = 0;
@@ -80,6 +82,8 @@ int android51_host_run(int argc, char **argv, const Android51Host *host)
     timer_del(poll_timer);
     timer_free(poll_timer);
     gf_adb_connect(false);
+    vm_stop(RUN_STATE_SHUTDOWN);
+    if (bdrv_flush_all() < 0) { result = -1; }
     qemu_cleanup(result);
     bql_unlock();
     replay_mutex_unlock();

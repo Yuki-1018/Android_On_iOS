@@ -26,7 +26,7 @@ The original Goldfish board has no SMP startup path. This implementation therefo
 
 Guest-virtual DMA translations must point into board RAM; physical batch descriptors are also bounded to RAM. MMIO recursion and oversized transfers are rejected. NAND raw ext4 geometry is 512-byte pages, zero spare bytes, 4096-byte erase units. No image is formatted or fetched. Persistent userdata/cache writes occur when running the host launcher.
 
-The touchscreen's distinct name selects Generic.kl rather than qwerty2. HOME uses Linux KEY_HOMEPAGE 172; KEY_HOME 102 means MOVE_HOME in Generic.kl. APP_SWITCH uses 580. Actual API 22 layout behavior still needs guest verification.
+The input device uses the stock API22 `qwerty2.idc` touchscreen classification. The old Goldfish kernel does not import INPUT_PROP_DIRECT, so a custom device name could be treated as a pointer. Relative axes and alphabetic hardware keys are not advertised, allowing Android's on-screen keyboard. The host Home control maps to scan code 102 for qwerty. Recents uses Android's on-screen navigation bar. Full physical-keyboard emulation is no longer advertised by this touch-only device.
 
 ## TCG patches
 

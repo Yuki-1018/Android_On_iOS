@@ -36,6 +36,7 @@ bool TouchInput::touch(uint64_t identity, TouchPhase phase, int32_t x, int32_t y
         for (size_t i = 0; i < slots_.size(); ++i) if (!slots_[i].active) { index = i; break; }
     }
     if (index == slots_.size()) return false;
+    if (phase == TouchPhase::move && slots_[index].x == x && slots_[index].y == y) return true;
     std::array<InputEvent, 7> packet{};
     size_t n = 0;
     if (down && active == 0) packet[n++] = {1, 330, 1}; // BTN_TOUCH first per Linux MT documentation.
@@ -58,8 +59,9 @@ bool TouchInput::touch(uint64_t identity, TouchPhase phase, int32_t x, int32_t y
     }
     packet[n++] = {0, 0, 0};
     if (!events_.push(std::span(packet.data(), n))) return false;
-    if (down) { slots_[index] = {true, identity, tracking}; tracking_ = uint32_t(tracking) + 1; }
+    if (down) { slots_[index] = {true, identity, tracking, x, y}; tracking_ = uint32_t(tracking) + 1; }
     if (end) slots_[index].active = false;
+    else { slots_[index].x = x; slots_[index].y = y; }
     return true;
 }
 bool TouchInput::key(HardwareKey key, int32_t value) noexcept {

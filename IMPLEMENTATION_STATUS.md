@@ -10,7 +10,7 @@
 | 描画 | guestのRGB565をBGRA32へ変換して受信。ページ切替時も同一行は転送しない。Metal専用queue、1フレームのみ進行、変更のない画面の再送抑制 | ホストで実ARMコードが書いた画素をcallbackで検証。iOS Metal描画は未検証 |
 | 全画面 | 起動時の端末の画面比率に合わせて高さを決定。描画・guest ABS範囲・UIKit座標を共通寸法に設定 | 幅360/480/540/720を選択、高さ480〜1600の偶数。実行中のホスト回転ではアスペクト比を保持して表示 |
 | タッチ／キー | 10点Protocol B、BQL下でinput queueをdrain、Back/Home/Recents/Power/音量、押下時間の保持、キュー満杯時の解除リトライ | native queueとguest capabilitiesを検証。実guestのジェスチャー／キー操作は未確認 |
-| 外付けキーボード | USB HID物理キーをLinux evdevへ変換。左右修飾キー、押下／解放、background時の解除 | 主要マッピングをnativeコンパイル時に検査。実キーボード未検証 |
+| 外付けキーボード | タッチ専用化に伴い、guestには英字ハードウェアキーボードを宣言しない | Androidの画面キーボードを使用。完全な物理キーボード対応は対象外 |
 | 音声 | GoldfishのPCMをAVAudioSourceNodeへ接続。render callbackは固定バッファ・allocation/lockなし。停止／再開ではリングを更新 | QEMU→hostの実PCM転送を検証。AVAudioSession、interruption、実音声は未検証 |
 | Network | SMC91C111 + libslirp NAT、固定DHCP/DNS設定、公開port forwardingなし。NWPathMonitorでホスト接続を監視 | ホストでNIC/slirp初期化を確認。guest DHCP/DNS/インターネット疎通とiOSでは未検証 |
 | ADB transport | Goldfish `qemud:adb` accept/start handshake、双方向の有界ring、backpressure、disconnect/reconnect | 合成ARMゲストとの双方向転送を実QEMU shared library上で検証。公開ADBソケットなし |
@@ -62,3 +62,18 @@ iOS起動前にcache.imgがない場合、アプリ内の空の64MiB ext4テン�
 テンプレートはビルド時にe2fsprogsで生成します。ext4機能をhas_journal/ext_attr/filetype/extent/sparse_super/large_fileに限定し、root所有者は0:0、inode table/journalは初期化済みとします。生成したsparseをアプリと同じC++ importerで展開し、e2fsck -fn成功、機能ビット、既存ファイルの上書き拒否を検証しました。実QEMUではcacheが第3パーティションとして独立して読み書き・永続化されることを確認（Goldfish 10テスト成功）。IPA検査にもテンプレート必須条件を追加しました。
 
 ツールテストは19件中18件成功・1件はローカルMeson 1.3によるスキップです。修正IPAの実機起動完了は未確認です。症状が残る場合は、APK・ADBの起動診断（logcatとprocess一覧）でAndroid userspace側を調べる必要があります。RAM 1GiB指定がkernelで760MiBへ切り詰められている点もログで確認できましたが、今回の変更ではRAM設定を自動変更しません。
+
+## 起動確認後の操作・性能改善
+
+ユーザーからAndroidのホーム・設定・ブラウザが動作したと報告されています。今回の追加変更についてはiOS実機未検証です。
+
+- API22標準qwerty2.idcを選択するデバイス名へ変更。Goldfish 3.4はINPUT_PROP_DIRECTを取り込まないため、独自名でのポインタ判定を回避します。相対マウス軸と物理英字キーボードを宣言せず、10点の絶対マルチタッチとAndroidの画面キーボードを使います。ホームボタンはqwerty配置の102へ変換し、履歴はAndroidのナビゲーションバーを使います。
+- Metal drawableの画素数をguest画素数の範囲へ制限し、Retina解像度での不要な拡大描画を削減。静止画面ではdirty bitmapのスナップショット作成を省略し、同一座標のtouch moveもキューへ送信しません。RAMはstock kernelが使える760MiBを上限として渡します。
+- 描画と入力のビューを共通のsafe areaに配置。起動時はアクティブwindowの寸法を参照し、横長ウィンドウでもguest panelを縦長に維持します。回転・resize後はaspect fitで余白表示し、切り抜きや非等方拡大をしません。実行中のguest解像度変更やAndroid自身の自動回転は未実装です。
+- メイン画面はイメージと起動操作を中心にし、メモリ/JIT/診断を詳細設定へ移動。StikDebug準備後、アプリがforegroundに戻ってから自動起動します。StikDebugによる準備自体は引き続き必要です。
+- 完全全画面を初期値にし、メニューと性能表示を非表示。3本指0.7秒長押し、またはアクセシビリティアクションで操作メニューを開きます。全画面の選択はUserDefaultsへ保存します。
+- 既存userdata/cacheと設定の永続化を維持し、pause/stop時にQEMU block flushを追加。pause時はiOS background taskで書き出し時間を確保します。イメージ置換前にデータも置き換わることを確認します。プロセス強制終了時のguest未書込RAMや実行状態の復元は保証しません。
+
+QEMUをWerrorで再ビルドし、Goldfish10件・埋め込みライフサイクル1件、ASan/UBSan native2件に成功。native側ではSE/ノッチ端末/iPad/狭いウィンドウに相当するviewportで座標変換を確認しましたが、UIKit/Metalの実機テストの代わりではありません。FPSや入力遅延の改善率は未測定です。
+
+参照: https://android.googlesource.com/platform/frameworks/base/+/android-5.1.1_r38/data/keyboards/qwerty2.idc

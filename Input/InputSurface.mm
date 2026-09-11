@@ -79,9 +79,9 @@
 }
 - (BOOL)sendHardwareKey:(uint16_t)code value:(int32_t)value {
     if (_resetPending || code >= _heldKeys.size() || value < 0 || value > 2) return NO;
-    BOOL supported = code > 0 && code <= 127;
+    BOOL supported = NO;
     switch (code) {
-        case 158: case 172: case 580: case 139: case 217: supported = YES; break;
+        case 102: case 114: case 115: case 116: case 158: case 172: case 139: case 217: supported = YES; break;
         default: break;
     }
     if (!supported) return NO;
@@ -94,7 +94,7 @@
     for (UIPress *press in presses) {
         uint16_t code = press.key ? emu::linuxKeyForHID((uint16_t)press.key.keyCode) : 0;
         if (!code) [unhandled addObject:press];
-        else [self sendHardwareKey:code value:_heldKeys[code] ? 2 : 1];
+        else if (![self sendHardwareKey:code value:_heldKeys[code] ? 2 : 1]) [unhandled addObject:press];
     }
     if (unhandled.count) [super pressesBegan:unhandled withEvent:event];
 }

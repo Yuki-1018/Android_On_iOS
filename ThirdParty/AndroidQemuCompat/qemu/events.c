@@ -9,7 +9,9 @@
 ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 ** GNU General Public License for more details.
 */
-/* AndroidEmu port of events_device.c; touchscreen-only Protocol B,
+/* qwerty2 selects the stock API22 IDC: touch.deviceType=touchScreen.
+ * The goldfish 3.4 driver does not import INPUT_PROP_DIRECT.
+ * AndroidEmu port of events_device.c; touchscreen-only Protocol B,
  * 10 slots, bounded native injection, no mouse/trackball translation.
  */
 #include "qemu/osdep.h"
@@ -28,7 +30,7 @@ typedef struct GFEvents {
     bool live;
 } GFEvents;
 static GFEvents *active_events;
-static const char device_name[] = "AndroidEmu Touchscreen";
+static const char device_name[] = "qwerty2";
 static void events_irq(GFEvents *s)
 {
     qemu_set_irq(s->board->irqs[13], s->live && s->count != 0);
@@ -109,11 +111,12 @@ static void events_reset(void *opaque)
 void gf_events_init(Android51State *board)
 {
     GFEvents *s = g_new0(GFEvents, 1);
-    static const unsigned keys[] = {KEY_BACK, KEY_HOMEPAGE, KEY_APPSELECT, KEY_POWER,
+    static const unsigned keys[] = {KEY_BACK, KEY_HOME, KEY_POWER,
                                    KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_MENU, KEY_SEARCH, BTN_TOUCH};
     s->board = board;
     set_event(s, EV_SYN, SYN_REPORT);
-    for (unsigned code = 1; code <= 127; ++code) { set_event(s, EV_KEY, code); }
+    /* Do not advertise a physical alphabetic keyboard: Android must show its
+     * on-screen keyboard for a touch-only device. */
     for (unsigned i = 0; i < ARRAY_SIZE(keys); ++i) { set_event(s, EV_KEY, keys[i]); }
     set_axis(s, ABS_X, 0, board->width - 1);
     set_axis(s, ABS_Y, 0, board->height - 1);

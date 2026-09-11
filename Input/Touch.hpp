@@ -17,7 +17,7 @@ std::optional<Point> guestPoint(Point point, double viewWidth, double viewHeight
 enum class HardwareKey : uint16_t { back = 158, home = 172, recents = 580, power = 116,
                                     volumeUp = 115, volumeDown = 114, menu = 139, search = 217 };
 class TouchInput {
-    struct Slot { bool active = false; uint64_t identity = 0; int32_t tracking = -1; };
+    struct Slot { bool active = false; uint64_t identity = 0; int32_t tracking = -1; int32_t x = 0, y = 0; };
     std::array<Slot, 10> slots_{};
     uint32_t tracking_ = 0;
     SPSCRing<InputEvent, 4096> events_;

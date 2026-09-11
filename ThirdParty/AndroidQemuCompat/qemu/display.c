@@ -45,6 +45,7 @@ static void display_update(void *opaque)
     DirtyBitmapSnapshot *snapshot;
     uint8_t *source;
     if (!s->valid || s->base > memory_region_size(ram) || bytes > memory_region_size(ram) - s->base) { return; }
+    if (!s->invalidate && !cpu_physical_memory_get_dirty(memory_region_get_ram_addr(ram) + s->base, bytes, DIRTY_MEMORY_VGA)) { return; }
     source = memory_region_get_ram_ptr(ram) + s->base;
     snapshot = memory_region_snapshot_and_clear_dirty(ram, s->base, bytes, DIRTY_MEMORY_VGA);
     for (uint32_t y = 0; y < GF_HEIGHT; ++y) {

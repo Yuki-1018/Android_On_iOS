@@ -60,6 +60,7 @@ struct RuntimeView: View {
     @ObservedObject var runtime: RuntimeModel
     @StateObject private var network = NetworkStatus()
     @State private var menu = false
+    @AppStorage("runtime.immersive") private var immersive = true
     @State private var log = false
     @State private var confirmStop = false
     @Environment(\.scenePhase) private var phase
@@ -72,11 +73,11 @@ struct RuntimeView: View {
                 VStack(spacing: 16) {
                     if !runtime.stopped { ProgressView().tint(.white) }
                     Text(runtime.status).foregroundStyle(.white)
-                    Button("起動ログ") { log = true }.tint(.white)
+                    if runtime.stopped { Button("詳細を確認") { log = true }.tint(.white) }
                     if runtime.stopped { Button("ライブラリへ戻る") { dismiss() }.tint(.white) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(true)
             }
-            if runtime.showPerformance {
+            if runtime.showPerformance && !immersive {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(String(format: "更新 %.0f/s · 表示 %.0f/s", value("guestUpdatesPerSecond"), value("presentationsPerSecond")))
                     Text(String(format: "メモリ %.0f MiB · コピー %.1f MiB/s", value("footprintMiB"), value("copyMiBPerSecond")))
@@ -87,11 +88,14 @@ struct RuntimeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 12).padding(.top, 8)
                 .allowsHitTesting(false)
             }
-            Button { menu = true } label: {
+            if !immersive { Button { menu = true } label: {
                 Image(systemName: "ellipsis").font(.body.bold()).foregroundStyle(.white)
                     .frame(width: 44, height: 36).background(.black.opacity(0.55), in: Capsule())
-            }.accessibilityLabel("エミュレータの操作").padding(.trailing, 12).padding(.top, 8)
+            }.accessibilityLabel("エミュレータの操作").padding(.trailing, 12).padding(.top, 8) }
         }
+        .onAppear { runtime.controller.showControls = { menu = true } }
+        .onDisappear { runtime.controller.showControls = nil }
+        .accessibilityAction(named: Text("操作メニューを開く")) { menu = true }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .interactiveDismissDisabled()
@@ -110,13 +114,15 @@ struct RuntimeView: View {
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
                         Button(runtime.paused ? "再開" : "一時停止") { runtime.pause(!runtime.paused); menu = false }
+                        Toggle("完全全画面（メニューボタンを隠す）", isOn: $immersive)
+                        Text("3本指の長押しで操作メニューを開けます。")
+                            .font(.footnote).foregroundStyle(.secondary)
                         Toggle("パフォーマンスを表示", isOn: $runtime.showPerformance)
                     }
                     Section("Androidの操作") {
                         HStack {
                             GuestKey(label: "戻る", code: 158, runtime: runtime)
                             GuestKey(label: "ホーム", code: 172, runtime: runtime)
-                            GuestKey(label: "履歴", code: 580, runtime: runtime)
                         }.buttonStyle(.bordered)
                         HStack {
                             GuestKey(label: "電源", code: 116, runtime: runtime)
@@ -130,7 +136,7 @@ struct RuntimeView: View {
                             GuestKey(label: "検索", code: 217, runtime: runtime)
                         }
                     }
-                    Section("接続・診断") {
+                    DisclosureGroup("詳細ツール・診断") {
                         Text(network.description)
                         if let adb = runtime.controller.adb {
                             NavigationLink("APK・ADB") { ADBToolsView(client: adb) }

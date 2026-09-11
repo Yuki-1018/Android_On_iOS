@@ -3,6 +3,7 @@
 #import "ADB/ADBClient.h"
 NS_ASSUME_NONNULL_BEGIN
 @interface AEVMController : UIViewController
+@property(nonatomic, copy, nullable) void (^showControls)(void);
 @property(nonatomic, readonly, nullable) AEADBClient *adb;
 @property(nonatomic, readonly) NSString *statusText;
 @property(nonatomic, readonly) NSString *serialText;

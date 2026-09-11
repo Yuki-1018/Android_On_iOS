@@ -18,7 +18,7 @@ typedef struct Android51Host {
     size_t (*input)(void *, Android51Event *, size_t);
     void (*pcm)(void *, const uint8_t *, size_t);
     void (*serial)(void *, const uint8_t *, size_t);
-    void (*state)(void *, int); /* 1: initialized, 2: paused, 3: resumed, 4: stopped */
+    void (*state)(void *, int); /* 1: initialized, 2: paused, 3: resumed, 4: stopped; 5: disk flush failed */
 } Android51Host;
 /* Exactly one lifecycle per process. Run on an owned thread. Returns -1 for
  * invalid ABI/repeated invocation; QEMU fatal initialization errors can exit. */

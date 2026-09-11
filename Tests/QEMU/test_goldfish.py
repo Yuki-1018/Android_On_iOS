@@ -201,7 +201,12 @@ class GoldfishTests(unittest.TestCase):
         events = 0xff050000
         self.write(events, 0)
         name = bytes(int(self.cmd(f'readb {events + 8 + i:#x}'), 0) for i in range(self.read(events + 4)))
-        self.assertEqual(name, b'AndroidEmu Touchscreen')
+        self.assertEqual(name, b'qwerty2')
+        self.write(events, 0x10002)
+        self.assertEqual(self.read(events + 4), 0)  # No relative mouse axes.
+        self.write(events, 0x10001)
+        self.assertEqual(int(self.cmd(f'readb {events + 8 + 30 // 8:#x}'), 0) & (1 << (30 % 8)), 0)
+        self.assertNotEqual(int(self.cmd(f'readb {events + 8 + 102 // 8:#x}'), 0) & (1 << (102 % 8)), 0)
         self.write(events, 0x20003)
         self.assertGreaterEqual(self.read(events + 4), 58 * 16)
         self.assertEqual(self.read(events + 8 + 47 * 16 + 4), 9)

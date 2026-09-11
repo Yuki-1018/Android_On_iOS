@@ -49,9 +49,11 @@ static std::string optionPath(NSString *path) {
     bool (*_region)(void *, void *, size_t);
     BOOL _started, _stopped, _guestPaused;
     uint32_t _width, _height;
+    UIBackgroundTaskIdentifier _saveTask;
 }
 - (instancetype)init {
     if ((self = [super init])) {
+        _saveTask = UIBackgroundTaskInvalid;
         _metrics = [AERuntimeMetrics new]; _audio = [AEAudioOutput new];
         _logLock = [NSLock new]; _log = [NSMutableData data];
         _statusText = @"起動準備"; _width = 540; _height = 960;
@@ -84,12 +86,30 @@ static std::string optionPath(NSString *path) {
     if (!_display) { _statusText = error.localizedDescription ?: @"Metal初期化に失敗しました"; return; }
     _display.runtimeMetrics = _metrics;
     _input = [[AEInputSurface alloc] initWithGuestWidth:_width height:_height];
+    UILongPressGestureRecognizer *menuGesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(openControls:)];
+    menuGesture.numberOfTouchesRequired = 3;
+    menuGesture.minimumPressDuration = 0.7;
+    [_input addGestureRecognizer:menuGesture];
     for (UIView *view in @[_display, _input]) {
         view.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:view];
-        [NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-            [view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-            [view.topAnchor constraintEqualToAnchor:self.view.topAnchor], [view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]]];
+        [NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
+            [view.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
+            [view.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor], [view.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
     }
+}
+- (void)openControls:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        [_input cancelTouches];
+        if (self.showControls) self.showControls();
+    }
+}
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    [_input cancelTouches];
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+}
+- (void)viewSafeAreaInsetsDidChange {
+    [super viewSafeAreaInsetsDidChange];
+    [_input cancelTouches];
 }
 - (BOOL)startWithImageDirectory:(NSString *)path ramMiB:(uint32_t)ram cacheMiB:(uint32_t)cache panelWidth:(uint32_t)width {
     NSAssert([NSThread isMainThread], @"Launch must originate on UI thread");
@@ -101,6 +121,8 @@ static std::string optionPath(NSString *path) {
     if (!(width == 360 || width == 480 || width == 540 || width == 720)) {
         _statusText = @"非対応の画面幅です"; return NO;
     }
+    // The stock Goldfish 3.4 kernel has a 760 MiB lowmem ceiling.
+    ram = MIN(ram, 760U);
     // Use the active iPhone/iPad window ratio, with bounded guest pixels.
     UIWindowScene *scene = nil;
     for (UIScene *candidate in [UIApplication sharedApplication].connectedScenes) {
@@ -108,7 +130,14 @@ static std::string optionPath(NSString *path) {
             scene = (UIWindowScene *)candidate; break;
         }
     }
-    CGSize panel = scene ? scene.effectiveGeometry.coordinateSpace.bounds.size : CGSizeMake(540, 960);
+    CGSize panel = CGSizeMake(540, 960);
+    UIWindow *window = self.viewIfLoaded.window ?: scene.keyWindow;
+    if (window) {
+        panel = UIEdgeInsetsInsetRect(window.bounds, window.safeAreaInsets).size;
+    } else if (scene) { panel = scene.effectiveGeometry.coordinateSpace.bounds.size; }
+    // Goldfish cannot hotplug panel geometry. Keep a portrait virtual panel;
+    // window rotation/resizing aspect-fits it without cropping or coordinate drift.
+    if (panel.width > panel.height) { panel = CGSizeMake(panel.height, panel.width); }
     uint32_t height = (uint32_t)(MIN(1600, MAX(480, width * panel.height / MAX(panel.width, 1))) / 2) * 2;
     if (self.isViewLoaded && (height != _height || width != _width)) { self.view = nil; _display = nil; _input = nil; }
     _width = width; _height = height;
@@ -194,6 +223,11 @@ static std::string optionPath(NSString *path) {
 }
 - (void)setGuestPaused:(BOOL)paused {
     if (!_started || _stopped || paused == _guestPaused) return;
+    if (paused && _saveTask == UIBackgroundTaskInvalid) {
+        __weak AEVMController *weakSelf = self;
+        _saveTask = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"Save Android disks" expirationHandler:^{ [weakSelf finishSaveTask]; }];
+    }
+    if (!paused) [self finishSaveTask];
     _guestPaused = paused;
     [_input cancelTouches]; _pause(paused); _display.paused = paused;
     if (paused) [_audio stop];
@@ -201,7 +235,7 @@ static std::string optionPath(NSString *path) {
     [UIApplication sharedApplication].idleTimerDisabled = !paused;
 }
 - (void)stopGuest { if (_started && !_stopped) { [_input cancelTouches]; [_adb cancel]; _stop(); _statusText = @"停止中"; } }
-- (void)sendGuestKey:(uint16_t)code pressed:(BOOL)pressed { if (_started && !_stopped) [_input sendHardwareKey:code value:pressed ? 1 : 0]; }
+- (void)sendGuestKey:(uint16_t)code pressed:(BOOL)pressed { if (_started && !_stopped) [_input sendHardwareKey:code == 172 ? 102 : code value:pressed ? 1 : 0]; }
 - (NSDictionary<NSString *, NSNumber *> *)statistics {
     NSMutableDictionary *result = [[_metrics snapshot] mutableCopy];
     result[@"panelWidth"] = @(_width); result[@"panelHeight"] = @(_height);
@@ -238,10 +272,18 @@ static std::string optionPath(NSString *path) {
     if (_log.length + length > limit) [_log replaceBytesInRange:NSMakeRange(0, _log.length + length - limit) withBytes:nullptr length:0];
     [_log appendBytes:data length:length]; [_logLock unlock];
 }
+- (void)finishSaveTask {
+    if (_saveTask != UIBackgroundTaskInvalid) {
+        [UIApplication.sharedApplication endBackgroundTask:_saveTask];
+        _saveTask = UIBackgroundTaskInvalid;
+    }
+}
 - (void)hostState:(int)state {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (state == 2 || state == 4 || state == 5) [self finishSaveTask];
         if (state == 1 || state == 3) self->_statusText = @"Androidを起動中";
         else if (state == 2) self->_statusText = @"一時停止";
+        else if (state == 5) self->_statusText = @"データの書き込みに失敗しました。端末の空き容量を確認してください";
     });
 }
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; /* Never dlclose a QEMU lifecycle. */ }
