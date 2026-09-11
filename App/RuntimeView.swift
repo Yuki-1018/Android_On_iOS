@@ -13,7 +13,14 @@ import Combine
     private var samples = 0
     private var startedAt: Date?
     @Published private(set) var elapsedSeconds = 0
-    func start(configuration: VMConfiguration) -> Bool {
+    @Published private(set) var preparing = false
+    func start(configuration: VMConfiguration) async -> Bool {
+        guard !preparing else { return false }
+        preparing = true
+        defer { preparing = false }
+        status = "cache領域を準備中"
+        do { try await ImageStore().ensureCache() }
+        catch { status = error.localizedDescription; return false }
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Android51", isDirectory: true)
         let success = controller.start(imageDirectory: root.path,

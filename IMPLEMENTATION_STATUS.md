@@ -52,3 +52,13 @@ RGB565の前回表示内容を行単位で比較し、ページ切替や同一�
 「APK・ADB → 起動診断を取得」でboot properties、uptime、meminfo、processes、直近のmain/system/crash logcatを収集します。自動起動確認で手動取得した診断出力が上書きされないよう変更しました。起動ロゴから進まない原因は実機ログ待ちであり、描画修正だけでLauncher到達が解決したとは判断していません。
 
 参照: https://android.googlesource.com/kernel/goldfish/+/refs/heads/android-goldfish-3.4/drivers/video/goldfishfb.c
+
+## 24分間起動ロゴから進まないログへの対応
+
+提供されたシリアルログでは、kernel起動、SELinux policy読込、/systemと/dataのext4マウントは成功しています。一方でcache用の第3MTDが存在せず、`/dev/block/mtdblock2`のopen/mountと`fs_mgr_mount_all`が失敗しています。これは確認できた構成不備であり、ログだけでsystem_serverの状態やロゴ停滞の全原因までは判定できません。
+
+iOS起動前にcache.imgがない場合、アプリ内の空の64MiB ext4テンプレートを既存のnative sparse importerで展開してcache.imgとして確定します。既存のcache/system/userdataを上書きせず、処理はImageStore actor上で行います。iOS VMはcacheを含む3パーティションを必須としました。空のファイルシステムメタデータだけを生成するもので、Android OSイメージやユーザーデータは同梱しません。
+
+テンプレートはビルド時にe2fsprogsで生成します。ext4機能をhas_journal/ext_attr/filetype/extent/sparse_super/large_fileに限定し、root所有者は0:0、inode table/journalは初期化済みとします。生成したsparseをアプリと同じC++ importerで展開し、e2fsck -fn成功、機能ビット、既存ファイルの上書き拒否を検証しました。実QEMUではcacheが第3パーティションとして独立して読み書き・永続化されることを確認（Goldfish 10テスト成功）。IPA検査にもテンプレート必須条件を追加しました。
+
+ツールテストは19件中18件成功・1件はローカルMeson 1.3によるスキップです。修正IPAの実機起動完了は未確認です。症状が残る場合は、APK・ADBの起動診断（logcatとprocess一覧）でAndroid userspace側を調べる必要があります。RAM 1GiB指定がkernelで760MiBへ切り詰められている点もログで確認できましたが、今回の変更ではRAM設定を自動変更しません。

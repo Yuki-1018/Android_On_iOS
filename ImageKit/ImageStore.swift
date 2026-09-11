@@ -31,6 +31,36 @@ actor ImageStore {
         }
         return Int64(size)
     }
+    func ensureCache() throws {
+        guard try current() != nil else { throw EmuError.image("先にAndroidイメージを取り込んでください。") }
+        let cache = root.appendingPathComponent("cache.img")
+        // Preserve imported/existing cache contents, including across upgrades.
+        if (try? cache.resourceValues(forKeys: [.isSymbolicLinkKey])) != nil {
+            _ = try regularFile(cache, maximum: 8 << 30)
+            return
+        }
+        guard let template = Bundle.main.url(forResource: "cache-template", withExtension: "sparse") else {
+            throw EmuError.image("空のcacheテンプレートがありません。更新したIPAをインストールしてください。")
+        }
+        let staged = root.appendingPathComponent("cache-create-\(UUID().uuidString).tmp")
+        defer { try? manager.removeItem(at: staged) }
+        var error = [CChar](repeating: 0, count: 1024)
+        let capacity = error.count
+        let copied = template.path.withCString { source in
+            staged.path.withCString { destination in
+                AEImportImage(source, destination, 64 << 20, &error, capacity)
+            }
+        }
+        guard copied else {
+            throw EmuError.image(error.withUnsafeBufferPointer { String(cString: $0.baseAddress!) })
+        }
+        guard try regularFile(staged, maximum: 64 << 20) == (64 << 20) else {
+            throw EmuError.image("cacheテンプレートの展開サイズが不正です。")
+        }
+        // The completed file is published only after the importer has fsynced.
+        // moveItem refuses to replace an existing destination.
+        try manager.moveItem(at: staged, to: cache)
+    }
     private func readMetadata(_ url: URL) throws -> [String: String] {
         _ = try regularFile(url, maximum: 65536)
         return try ImageProfile.properties(String(contentsOf: url, encoding: .utf8))

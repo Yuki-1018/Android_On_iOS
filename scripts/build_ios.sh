@@ -8,6 +8,7 @@ if [[ "${sdk_version%%.*}" -lt 26 ]]; then
 fi
 [[ -f build/ios-frameworks/AndroidQEMU.framework/AndroidQEMU ]] || { echo "Build iOS engine dependencies first" >&2; exit 1; }
 python3 scripts/generate_project.py
+python3 scripts/create_cache_template.py
 xcodebuild -project AndroidEmu.xcodeproj -scheme AndroidEmu -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build

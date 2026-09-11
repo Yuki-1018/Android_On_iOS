@@ -25,6 +25,8 @@ class GoldfishTests(unittest.TestCase):
         directory = Path(self.temp.name)
         self.system = directory / 'system.raw'
         self.userdata = directory / 'userdata.raw'
+        self.cache = directory / 'cache.raw'
+        self.cache.write_bytes(bytes(8192))
         self.system.write_bytes(bytes(range(256)) * 16)
         self.userdata.write_bytes(bytes(8192))
         path = directory / 'qtest.sock'
@@ -37,6 +39,7 @@ class GoldfishTests(unittest.TestCase):
             '-qmp', f'unix:{directory / "qmp.sock"},server=on,wait=off',
             '-drive', f'if=none,id=system,file={self.system},format=raw,readonly=on',
             '-drive', f'if=none,id=userdata,file={self.userdata},format=raw',
+            '-drive', f'if=none,id=cache,file={self.cache},format=raw',
         ], stdout=self.log, stderr=self.log)
         self.addCleanup(self.stop)
         deadline = time.monotonic() + 10
@@ -127,7 +130,7 @@ class GoldfishTests(unittest.TestCase):
     def test_nand_read_write_protection_and_batch(self):
         base = 0xff030000
         self.assertEqual(self.read(base), 1)
-        self.assertEqual(self.read(base + 4), 2)
+        self.assertEqual(self.read(base + 4), 3)
         self.assertEqual(self.nand(0, 1, 0, 0x1000, 256), 256)
         self.assertEqual(self.get(0x1000, 256), bytes(range(256)))
         self.assertEqual(self.nand(0, 2, 0, 0x1000, 256), 0)
@@ -148,6 +151,18 @@ class GoldfishTests(unittest.TestCase):
         self.assertEqual(self.userdata.read_bytes()[512:768], bytes(range(256)))
         self.assertEqual(self.system.read_bytes(), bytes(range(256)) * 16)
 
+    def test_cache_is_third_partition_and_persists_independently(self):
+        self.assertEqual(self.read(0xff030004), 3)
+        payload = b'CACHE-PERSIST' + bytes(512 - 13)
+        self.put(0x1000, payload)
+        self.assertEqual(self.nand(2, 2, 4096, 0x1000, len(payload)), len(payload))
+        self.assertEqual(self.nand(2, 1, 4096, 0x2000, len(payload)), len(payload))
+        self.assertEqual(self.get(0x2000, len(payload)), payload)
+        self.stop()
+        self.assertEqual(self.cache.read_bytes()[4096:4608], payload)
+        self.assertEqual(self.userdata.read_bytes(), bytes(8192))
+        self.assertEqual(self.system.read_bytes(), bytes(range(256)) * 16)
+
     def test_dma_cannot_reenter_mmio(self):
         # A DMA pointer is untrusted. It must never recurse into a device's
         # command register or accept mapped MMIO as a valid payload buffer.
@@ -158,7 +173,7 @@ class GoldfishTests(unittest.TestCase):
         self.assertEqual(self.read(0xff030040), 0)
         self.write(0xff070018, 0xff070000)
         self.write(0xff070020, 0)
-        self.assertEqual(self.read(0xff030004), 2)
+        self.assertEqual(self.read(0xff030004), 3)
 
     def test_audio_buffer_submission_and_irq(self):
         base, pic = 0xff004000, 0xff000000

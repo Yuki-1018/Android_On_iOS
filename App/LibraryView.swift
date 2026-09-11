@@ -21,7 +21,7 @@ struct LibraryView: View {
                         Text(ByteCountFormatter.string(fromByteCount: manifest.files.reduce(0) { $0 + $1.bytes }, countStyle: .binary))
                     } else { Text("Androidイメージは同梱されていません。") }
                     Button(model.manifest == nil ? "Add Android" : "イメージを置き換える") { chooseImage = true }
-                        .disabled(model.importing || jit.state == .preparing || runtime.controller.started)
+                        .disabled(model.importing || jit.state == .preparing || runtime.controller.started || runtime.preparing)
                     if model.importing { ProgressView("コピー・変換・SHA-256検証中…") }
                 } footer: {
                     Text("合法的に利用可能なAPI 22 default / armeabi-v7aイメージのフォルダを選択してください。source.propertiesが必要です。データは端末内に保存されます。")
@@ -55,9 +55,12 @@ struct LibraryView: View {
                 }
                 Section {
                     Button("Androidを起動", systemImage: "play.fill") {
-                        if runtime.start(configuration: model.configuration) { showRuntime = true }
-                        else { model.errorMessage = runtime.status }
-                    }.disabled(model.manifest == nil || model.importing || jit.state != .ready || runtime.controller.started)
+                        Task {
+                            if await runtime.start(configuration: model.configuration) { showRuntime = true }
+                            else { model.errorMessage = runtime.status }
+                        }
+                    }.disabled(model.manifest == nil || model.importing || jit.state != .ready || runtime.controller.started || runtime.preparing)
+                    if runtime.preparing { ProgressView(runtime.status) }
                     if !runtime.controller.engineAvailable {
                         Text("QEMU frameworkがありません。エンジンを含むIPAをビルドしてください。")
                             .font(.footnote).foregroundStyle(.secondary)

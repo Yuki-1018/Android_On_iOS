@@ -28,6 +28,15 @@ def verify(path):
             if '_CodeSignature' in parts:
                 raise ValueError('Signed app found in unsigned artifact')
         prefix = 'Payload/AndroidEmu.app/'
+        template_name = prefix + 'cache-template.sparse'
+        if template_name not in seen:
+            raise ValueError('Missing empty cache filesystem template')
+        if not 40 <= archive.getinfo(template_name).file_size <= 4 * 1024 * 1024:
+            raise ValueError('Unexpected cache template size')
+        with archive.open(template_name) as template:
+            magic, major, minor, header, chunk, block, blocks, chunks, crc = struct.unpack('<I4H4I', template.read(28))
+        if (magic, major, minor, header, chunk, block, blocks) != (0xed26ff3a, 1, 0, 28, 12, 4096, 16384) or chunks == 0:
+            raise ValueError('Invalid empty cache template header')
         info_entry = archive.getinfo(prefix + 'Info.plist')
         if info_entry.file_size > 65536:
             raise ValueError('Oversized app plist')

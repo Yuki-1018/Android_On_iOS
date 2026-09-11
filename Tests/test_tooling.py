@@ -16,9 +16,12 @@ verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
 class ArtifactTests(unittest.TestCase):
-    def make_ipa(self, path, extra=None):
+    def make_ipa(self, path, extra=None, cache=True):
         info = {'MinimumOSVersion': '26.0', 'CFBundleExecutable': 'AndroidEmu', 'LSApplicationQueriesSchemes': ['stikdebug']}
         with zipfile.ZipFile(path, 'w') as archive:
+            if cache:
+                archive.writestr('Payload/AndroidEmu.app/cache-template.sparse',
+                    struct.pack('<I4H4I', 0xed26ff3a, 1, 0, 28, 12, 4096, 16384, 1, 0) + struct.pack('<2H2I', 0xcac3, 0, 16384, 12))
             archive.writestr('Payload/AndroidEmu.app/Info.plist', plistlib.dumps(info))
             archive.writestr('Payload/AndroidEmu.app/AndroidEmu', struct.pack('<8I', 0xfeedfacf, 0x100000c, 0, 2, 0, 0, 0, 0))
             archive.writestr('Payload/AndroidEmu.app/EngineLicenses/engine-manifest.json', json.dumps({'frameworks': ['AndroidQEMU']}))
@@ -31,6 +34,13 @@ class ArtifactTests(unittest.TestCase):
             path = Path(folder) / 'app.ipa'
             self.make_ipa(path)
             verify.verify(path)
+
+    def test_missing_cache_template_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'app.ipa'
+            self.make_ipa(path, cache=False)
+            with self.assertRaisesRegex(ValueError, 'cache filesystem template'):
+                verify.verify(path)
 
     def test_guest_and_path_rejection(self):
         for bad in ['Payload/AndroidEmu.app/system.img', 'Payload/AndroidEmu.app/x.apk', '../Payload/evil',

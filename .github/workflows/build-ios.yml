@@ -60,7 +60,7 @@ jobs:
         run: bash scripts/test_models.sh
       - name: Install cross-build tools
         run: |
-          brew install meson ninja pkg-config gettext glib autoconf automake libtool
+          brew install meson ninja pkg-config gettext glib autoconf automake libtool e2fsprogs
           echo "$(brew --prefix gettext)/bin" >> "$GITHUB_PATH"
           python3 -m venv build/tools-venv
           build/tools-venv/bin/pip install setuptools six pyparsing pyyaml distlib mako

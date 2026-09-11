@@ -26,7 +26,7 @@ Android51/
   system.img
   userdata.img
   source.properties       # 必須
-  cache.img               # 任意
+  cache.img               # 任意。未提供ならiOSアプリが空の64MiB ext4を作成
   hardware-properties.ini # 任意
 ```
 
@@ -45,7 +45,7 @@ URL起動成功だけではReadyにしません。通常のLLDBはuniversal scri
 macOSとXcodeのiPhoneOS SDK 26以降が必要です。
 
 ```sh
-brew install meson ninja pkg-config gettext glib autoconf automake libtool
+brew install meson ninja pkg-config gettext glib autoconf automake libtool e2fsprogs
 export PATH="$(brew --prefix gettext)/bin:$PATH"
 bash scripts/bootstrap.sh
 bash scripts/test_models.sh

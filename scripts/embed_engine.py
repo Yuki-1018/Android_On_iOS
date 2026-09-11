@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def embed(app):
     app = Path(app)
+    # Empty cache filesystem metadata only; no kernel/system/userdata content.
+    shutil.copy2(ROOT / 'build/cache-template.sparse', app / 'cache-template.sparse')
     source = ROOT / 'build/ios-frameworks'
     names = json.loads((source / 'engine-manifest.json').read_text())['frameworks']
     if 'AndroidQEMU' not in names:

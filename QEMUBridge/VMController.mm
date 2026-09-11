@@ -114,11 +114,9 @@ static std::string optionPath(NSString *path) {
     _width = width; _height = height;
     [self loadViewIfNeeded];
     if (!_display) return NO;
-    NSMutableArray<NSString *> *disks = [NSMutableArray arrayWithArray:@[@"system", @"userdata"]];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:[path stringByAppendingPathComponent:@"cache.img"]]) [disks addObject:@"cache"];
+    NSArray<NSString *> *disks = @[@"system", @"userdata", @"cache"];
     for (NSString *name in @[@"kernel", @"ramdisk.img", @"system.img", @"userdata.img", @"cache.img"]) {
         NSString *file = [path stringByAppendingPathComponent:name]; struct stat info;
-        if ([name isEqualToString:@"cache.img"] && ![disks containsObject:@"cache"]) continue;
         BOOL disk = [disks containsObject:[name stringByDeletingPathExtension]];
         uint64_t limit = disk ? 8ULL << 30 : 64ULL << 20;
         if (lstat(file.fileSystemRepresentation, &info) || !S_ISREG(info.st_mode) || info.st_size <= 0 ||
