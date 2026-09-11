@@ -6,6 +6,7 @@ through the machine's kernel loader and emits a serial marker. These are not
 Android boot/Launcher tests.
 """
 import os
+import json
 from pathlib import Path
 import socket
 import struct
@@ -33,6 +34,7 @@ class GoldfishTests(unittest.TestCase):
             str(QEMU), '-machine', 'android51,audiodev=audio', '-accel', 'qtest', '-m', '128M',
             '-display', 'none', '-nodefaults', '-nic', 'none', '-audiodev', 'none,id=audio',
             '-qtest', f'unix:{path},server=on,wait=off',
+            '-qmp', f'unix:{directory / "qmp.sock"},server=on,wait=off',
             '-drive', f'if=none,id=system,file={self.system},format=raw,readonly=on',
             '-drive', f'if=none,id=userdata,file={self.userdata},format=raw',
         ], stdout=self.log, stderr=self.log)
@@ -175,7 +177,7 @@ class GoldfishTests(unittest.TestCase):
     def test_framebuffer_interrupt_and_capabilities(self):
         fb = 0xff040000
         self.assertEqual((self.read(fb), self.read(fb + 4)), (540, 960))
-        self.assertEqual(self.read(fb + 0x24), 5)
+        self.assertEqual(self.read(fb + 0x24), 4)
         self.write(fb + 12, 3)
         self.write(fb + 16, 0x100000)
         self.cmd('clock_step 20000000')
@@ -189,6 +191,68 @@ class GoldfishTests(unittest.TestCase):
         self.assertGreaterEqual(self.read(events + 4), 58 * 16)
         self.assertEqual(self.read(events + 8 + 47 * 16 + 4), 9)
         self.assertEqual(self.read(0xff060018), 100)
+
+    def test_rgb565_scanout_stride_page_flip_and_blank(self):
+        fb, width, height = 0xff040000, 540, 960
+        size = width * height * 2
+        # The last frame fits exactly at the end of RAM. A 32-bpp reader
+        # would reject this valid frame or read beyond guest RAM.
+        front, back = 0x100000, 128 * 1024 * 1024 - size
+        colors = {(0, 0): (0xf800, b'\xff\0\0'),
+                  (1, 0): (0x07e0, b'\0\xff\0'),
+                  (width - 1, 0): (0x001f, b'\0\0\xff'),
+                  (0, 1): (0xffff, b'\xff\xff\xff'),
+                  (0, height - 1): (0x001f, b'\0\0\xff'),
+                  (width - 1, height - 1): (0xf800, b'\xff\0\0')}
+        for (x, y), (packed, _) in colors.items():
+            self.put(front + (y * width + x) * 2, struct.pack('<H', packed))
+        self.put(back, struct.pack('<H', 0x07e0))
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as qmp:
+            qmp.settimeout(5)
+            qmp.connect(str(Path(self.temp.name) / 'qmp.sock'))
+            with qmp.makefile('rb') as stream:
+                self.assertIn('QMP', json.loads(stream.readline()))
+                def command(name, arguments=None):
+                    qmp.sendall((json.dumps({'execute': name, 'arguments': arguments or {}}) + '\n').encode())
+                    while True:
+                        response = json.loads(stream.readline())
+                        if 'event' in response: continue
+                        self.assertIn('return', response)
+                        return response['return']
+                command('qmp_capabilities')
+                def screenshot():
+                    path = Path(self.temp.name) / 'frame.ppm'
+                    command('screendump', {'filename': str(path)})
+                    with path.open('rb') as ppm:
+                        self.assertEqual(ppm.readline(), b'P6\n')
+                        self.assertEqual(ppm.readline(), b'540 960\n')
+                        self.assertEqual(ppm.readline(), b'255\n')
+                        return ppm.read()
+                self.write(fb + 12, 3)
+                self.write(fb + 16, front)
+                self.cmd('clock_step 20000000')
+                image = screenshot()
+                for (x, y), (_, rgb) in colors.items():
+                    offset = (y * width + x) * 3
+                    self.assertEqual(image[offset:offset+3], rgb, (x, y))
+                self.assertEqual(image[width*3+3:width*3+6], bytes(3))
+                self.write(fb + 16, back)
+                self.cmd('clock_step 20000000')
+                self.assertEqual(self.read(fb + 8) & 2, 2)
+                image = screenshot()
+                self.assertEqual(image[:3], b'\0\xff\0')
+                self.assertEqual(image[3:], bytes(width * height * 3 - 3))
+                self.write(fb + 24, 1)
+                self.cmd('clock_step 20000000')
+                self.assertEqual(screenshot(), bytes(width * height * 3))
+                self.write(fb + 24, 0)
+                self.cmd('clock_step 20000000')
+                self.assertEqual(screenshot(), image)
+                # Same content at another address must still acknowledge flips.
+                self.write(fb + 16, back)
+                self.cmd('clock_step 20000000')
+                self.assertEqual(self.read(fb + 8) & 2, 2)
+                self.assertEqual(screenshot(), image)
 
     def pipe(self, command, channel=1, payload=None, size=0):
         base = 0xff070000

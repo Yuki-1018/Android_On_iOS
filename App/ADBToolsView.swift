@@ -21,6 +21,9 @@ struct ADBToolsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("起動完了を確認") { client.checkBoot() }.disabled(busy)
                 Button("APKをインストール", systemImage: "square.and.arrow.down") { chooseAPK = true }.disabled(busy)
+                Button("起動診断を取得") {
+                    client.runShell("echo '=== boot ==='; getprop sys.boot_completed; getprop init.svc.bootanim; getprop init.svc.zygote; getprop init.svc.surfaceflinger; echo '=== uptime ==='; cat /proc/uptime; echo '=== memory ==='; cat /proc/meminfo; echo '=== processes ==='; ps; echo '=== errors ==='; logcat -b main -b system -b crash -d -t 200")
+                }.disabled(busy)
                 Button("最近のlogcat") { client.runShell("logcat -d -t 200") }.disabled(busy)
             }
             Section("Android shell") {

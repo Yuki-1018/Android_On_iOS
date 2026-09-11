@@ -91,12 +91,15 @@ static std::string optionPath(NSString *path) {
             [view.topAnchor constraintEqualToAnchor:self.view.topAnchor], [view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]]];
     }
 }
-- (BOOL)startWithImageDirectory:(NSString *)path ramMiB:(uint32_t)ram cacheMiB:(uint32_t)cache {
+- (BOOL)startWithImageDirectory:(NSString *)path ramMiB:(uint32_t)ram cacheMiB:(uint32_t)cache panelWidth:(uint32_t)width {
     NSAssert([NSThread isMainThread], @"Launch must originate on UI thread");
     if (_started) { _statusText = @"再起動にはアプリを終了して開き直してください"; return NO; }
     if (!AEJITArenaReady()) { _statusText = @"先にJITを有効にしてください"; return NO; }
     if (!(ram == 512 || ram == 640 || ram == 768 || ram == 1024) || !(cache == 128 || cache == 192 || cache == 256)) {
         _statusText = @"非対応のメモリ設定です"; return NO;
+    }
+    if (!(width == 360 || width == 480 || width == 540 || width == 720)) {
+        _statusText = @"非対応の画面幅です"; return NO;
     }
     // Use the active iPhone/iPad window ratio, with bounded guest pixels.
     UIWindowScene *scene = nil;
@@ -106,9 +109,9 @@ static std::string optionPath(NSString *path) {
         }
     }
     CGSize panel = scene ? scene.effectiveGeometry.coordinateSpace.bounds.size : CGSizeMake(540, 960);
-    uint32_t height = (uint32_t)(MIN(1600, MAX(480, _width * panel.height / MAX(panel.width, 1))) / 2) * 2;
-    if (self.isViewLoaded && height != _height) { self.view = nil; _display = nil; _input = nil; }
-    _height = height;
+    uint32_t height = (uint32_t)(MIN(1600, MAX(480, width * panel.height / MAX(panel.width, 1))) / 2) * 2;
+    if (self.isViewLoaded && (height != _height || width != _width)) { self.view = nil; _display = nil; _input = nil; }
+    _width = width; _height = height;
     [self loadViewIfNeeded];
     if (!_display) return NO;
     NSMutableArray<NSString *> *disks = [NSMutableArray arrayWithArray:@[@"system", @"userdata"]];
@@ -203,6 +206,7 @@ static std::string optionPath(NSString *path) {
 - (void)sendGuestKey:(uint16_t)code pressed:(BOOL)pressed { if (_started && !_stopped) [_input sendHardwareKey:code value:pressed ? 1 : 0]; }
 - (NSDictionary<NSString *, NSNumber *> *)statistics {
     NSMutableDictionary *result = [[_metrics snapshot] mutableCopy];
+    result[@"panelWidth"] = @(_width); result[@"panelHeight"] = @(_height);
     if (_metric) {
         result[@"tcgUsedMiB"] = @(_metric(0) / 1048576.0);
         result[@"tcgCapacityMiB"] = @(_metric(1) / 1048576.0);

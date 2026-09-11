@@ -34,7 +34,13 @@ struct LibraryView: View {
                         ForEach(VMConfiguration.Cache.allCases, id: \.self) { Text("\($0.rawValue) MiB").tag($0) }
                     }.disabled(jit.state == .preparing || jit.state == .ready)
                     LabeledContent("vCPU", value: "1")
-                    LabeledContent("Resolution", value: "端末の画面に合わせる")
+                    Picker("描画する画面幅", selection: $model.configuration.resolution) {
+                        ForEach(VMConfiguration.Resolution.allCases, id: \.self) { resolution in
+                            Text("\(resolution.width) px" + (resolution == .performance ? "（速度優先）" : "")).tag(resolution)
+                        }
+                    }.disabled(runtime.controller.started)
+                    Text("高さは端末の比率に合わせ、全画面に拡大します。360 pxは540 pxに比べ描画画素数を約56%削減します。")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("JIT") {
                     LabeledContent("Status", value: jit.state.rawValue)

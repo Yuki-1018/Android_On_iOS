@@ -62,6 +62,9 @@
     _client=std::make_unique<emu::adb::Client>(std::move(transport)); _client->connect();
 }
 - (void)perform:(NSString *)label action:(NSString *(^)(void))action {
+    [self perform:label publishOutput:YES action:action];
+}
+- (void)perform:(NSString *)label publishOutput:(BOOL)publishOutput action:(NSString *(^)(void))action {
     NSAssert([NSThread isMainThread],@"ADB operations must originate on UI thread");
     if (_busy || _cancelled.load()) return;
     _busy=YES; _statusText=label; _transferProgress=0;
@@ -71,14 +74,15 @@
             try { [self connect]; output=action(); }
             catch (const std::exception& e) { success=NO; self->_client.reset(); if (self->_disconnect) self->_disconnect(); output=@(e.what()); }
             dispatch_async(dispatch_get_main_queue(), ^{
-                self->_outputText=output ?: @""; self->_busy=NO;
+                if (publishOutput) self->_outputText=output ?: @"";
+                self->_busy=NO;
                 self->_statusText=success ? @"ADB接続済み" : @"ADB処理に失敗しました";
             });
         }
     });
 }
 - (void)checkBoot {
-    [self perform:@"Androidの起動を確認中" action:^NSString *{
+    [self perform:@"Androidの起動を確認中" publishOutput:NO action:^NSString *{
         auto output=self->_client->shell("getprop sys.boot_completed",4096);
         NSString *text=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding] ?: @"";
         BOOL complete=[[text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] isEqualToString:@"1"];

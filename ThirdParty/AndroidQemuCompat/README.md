@@ -17,7 +17,7 @@ This directory contains an ARMv7 Goldfish machine overlay for pinned UTM QEMU 10
 | `ff010000` / 11 | Goldfish wall-clock RTC |
 | `ff020000` / 10 | QEMU SMC91C111; host launcher selects slirp user networking |
 | `ff030000` | NAND v1, raw system/userdata/optional cache backends; read-only system, batch operations |
-| `ff040000` / 12 | Configurable BGRA framebuffer (default 540×960), dirty-row updates, virtual 60 Hz VSYNC and base-update IRQ |
+| `ff040000` / 12 | RGB565 guest framebuffer (default 540×960) converted to BGRA32, unchanged-row suppression across page flips, virtual 60 Hz VSYNC and base-update IRQ |
 | `ff050000` / 13 | Linux input capabilities, ten MT Protocol B slots, bounded event queue |
 | `ff060000` / 14 | Minimal AC/full battery reporting |
 | `ff070000` / 15 | Goldfish v1 pipes: connector, bounded pingpong, framed qemud boot-properties and in-process ADB |

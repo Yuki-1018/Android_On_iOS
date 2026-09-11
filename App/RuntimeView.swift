@@ -11,18 +11,22 @@ import Combine
     @Published var showPerformance = false
     private var sampler: AnyCancellable?
     private var samples = 0
+    private var startedAt: Date?
+    @Published private(set) var elapsedSeconds = 0
     func start(configuration: VMConfiguration) -> Bool {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Android51", isDirectory: true)
         let success = controller.start(imageDirectory: root.path,
-            ramMiB: UInt32(configuration.ram.rawValue), cacheMiB: UInt32(configuration.cache.rawValue))
+            ramMiB: UInt32(configuration.ram.rawValue), cacheMiB: UInt32(configuration.cache.rawValue), panelWidth: UInt32(configuration.resolution.width))
         status = controller.statusText
         guard success else { return false }
+        startedAt = Date()
         showPerformance = configuration.performanceOverlay
         sampler = Timer.publish(every: 1, on: .main, in: .common).autoconnect().sink { [weak self] _ in
             guard let self else { return }
             self.paused = self.controller.guestPaused
             self.samples += 1
+            self.elapsedSeconds = Int(Date().timeIntervalSince(self.startedAt ?? Date()))
             if let adb = self.controller.adb, !adb.bootCompleted, !adb.busy, !self.paused, self.samples % 10 == 1 {
                 adb.checkBoot()
             }
@@ -93,6 +97,11 @@ struct RuntimeView: View {
                 List {
                     Section {
                         Text(runtime.status)
+                        Text("起動から \(runtime.elapsedSeconds / 60)分\(runtime.elapsedSeconds % 60)秒")
+                        if runtime.controller.adb?.bootCompleted != true {
+                            Text("ロゴの表示だけでは起動完了を判断できません。進まない場合は「APK・ADB」の起動診断を取得してください。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                         Button(runtime.paused ? "再開" : "一時停止") { runtime.pause(!runtime.paused); menu = false }
                         Toggle("パフォーマンスを表示", isOn: $runtime.showPerformance)
                     }

@@ -28,7 +28,7 @@ def probe_code():
         literals.append(value)
     def write(address, value):
         load(0, address); load(1, value); words.append(0xe5801000)
-    write(0x100000, 0xff1267ab)  # A real BGRA framebuffer pixel.
+    write(0x100000, 0xf80007e0)  # Two real RGB565 pixels: green, red.
     write(0xff040010, 0x100000)
     write(0xff004004, 3)
     write(0xff004008, 0x200000)
@@ -92,8 +92,8 @@ def child(directory):
         results['frames'] += 1
         if results['panel'] is None: results['panel'] = [width, height]
         if y == 0:
-            results['pixel'] = C.string_at(data, 4).hex()
-            results['adbPixel'] = C.string_at(C.addressof(data.contents) + 4, 9).hex()
+            results['pixel'] = C.string_at(data, 8).hex()
+            results['adbPixel'] = C.string_at(C.addressof(data.contents) + 8, 20).hex()
     @Input
     def inputs(ctx, events, capacity):
         results['inputPolls'] += 1
@@ -183,12 +183,16 @@ class EmbeddedTests(unittest.TestCase):
             self.assertIn('EMBEDDED_TCG_OK', result['serial'])
             self.assertGreater(result['frames'], 0)
             self.assertEqual(result['panel'], [540, 1170])
-            self.assertEqual(result['pixel'], 'ab6712ff')
+            self.assertEqual(result['pixel'], '00ff00ff0000ffff')
             self.assertEqual(result['pcm'], 4096)
             self.assertEqual(result['adbFromGuest'], 'FROM_ANDROID')
             self.assertEqual(result['adbWritten'], 9)
             self.assertTrue(result['adbDisconnected'])
-            self.assertEqual(result['adbPixel'], b'BIDIR_ADB'.hex())
+            expected = bytearray()
+            for pixel in struct.unpack('<5H', b'BIDIR_ADB\0'):
+                r, g, b = pixel >> 11, (pixel >> 5) & 63, pixel & 31
+                expected.extend(((b << 3) | (b >> 2), (g << 2) | (g >> 4), (r << 3) | (r >> 2), 255))
+            self.assertEqual(result['adbPixel'], expected.hex())
             self.assertGreater(result['inputPolls'], 1)
 
 if __name__ == '__main__':
