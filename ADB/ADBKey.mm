@@ -56,7 +56,10 @@ std::span<const uint8_t> derValue(std::span<const uint8_t>& bytes, uint8_t tag) 
     CFRelease(publicKey);
     if (!encoded) { NSError *e = CFBridgingRelease(failure); if (error) *error = e; return nil; }
     try {
-        auto bytes=std::span(static_cast<const uint8_t *>(encoded.bytes),encoded.length);
+        std::span<const uint8_t> bytes{
+            static_cast<const uint8_t *>(encoded.bytes),
+            static_cast<std::size_t>(encoded.length)
+        };
         auto sequence=derValue(bytes,0x30);
         auto modulus=derValue(sequence,0x02), exponent=derValue(sequence,0x02);
         if (!bytes.empty() || !sequence.empty() || exponent.size()>4) throw std::runtime_error("Invalid RSA public key");
