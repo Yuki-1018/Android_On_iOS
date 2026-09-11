@@ -25,8 +25,11 @@ class EnginePackagingTests(unittest.TestCase):
         self.platform = 'IOS'
         self.architecture = 'arm64'
         self.foreign = None
+        self.missing_exports = set()
 
     def tool(self, *args):
+        if args[:2] == ('xcrun', 'nm'):
+            return ''.join('_' + name + '\n' for name in sorted(package.REQUIRED_ENGINE_SYMBOLS - self.missing_exports))
         if args[:2] == ('xcrun', 'lipo'): return self.architecture + '\n'
         if args[:2] == ('xcrun', 'vtool'): return 'platform ' + self.platform + '\n'
         if args[:2] == ('otool', '-L'):
@@ -62,3 +65,20 @@ class EnginePackagingTests(unittest.TestCase):
         self.foreign = Path(self.temp.name) / 'brew-library.dylib'
         self.foreign.write_bytes(b'host fixture')
         with self.assertRaises(ValueError): self.invoke()
+
+    def test_rejects_engine_missing_each_application_export(self):
+        for symbol in package.REQUIRED_ENGINE_SYMBOLS:
+            with self.subTest(symbol=symbol):
+                self.missing_exports = {symbol}
+                with self.assertRaisesRegex(ValueError, symbol):
+                    self.invoke()
+
+    def test_rechecks_exports_after_framework_relocation(self):
+        inspect = self.tool
+        def lose_export(*args):
+            if args[:2] == ('xcrun', 'nm') and Path(args[-1]) != self.engine:
+                return ''
+            return inspect(*args)
+        with patch.object(package, 'run', lose_export), patch.object(package.subprocess, 'run'):
+            with self.assertRaisesRegex(ValueError, 'missing application exports'):
+                package.package(self.engine, self.prefix, self.destination)

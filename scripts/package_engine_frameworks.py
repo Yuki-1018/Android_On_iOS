@@ -8,6 +8,22 @@ import shutil
 import subprocess
 import sys
 
+REQUIRED_ENGINE_SYMBOLS = frozenset({
+    'android51_host_run', 'android51_host_pause', 'android51_host_stop',
+    'android51_host_metric', 'android51_tcg_set_region',
+    'android51_adb_connected', 'android51_adb_disconnect',
+    'android51_adb_read', 'android51_adb_write',
+})
+
+
+def verify_engine_exports(path):
+    # Mach-O C symbols have a leading underscore. Only defined external
+    # symbols count: undefined imports cannot satisfy the application's ABI.
+    exported = set(run('xcrun', 'nm', '-gUj', str(path)).splitlines())
+    missing = sorted(name for name in REQUIRED_ENGINE_SYMBOLS if '_' + name not in exported)
+    if missing:
+        raise ValueError('QEMU framework is missing application exports: ' + ', '.join(missing))
+
 
 def run(*args):
     return subprocess.check_output(args, text=True)
@@ -29,6 +45,8 @@ def package(engine, prefix, destination):
         commands = run('xcrun', 'vtool', '-show-build', str(path))
         if not re.search(r'platform\s+(IOS|2)\b', commands):
             raise ValueError(f'Expected iPhoneOS Mach-O: {path}')
+        if main:
+            verify_engine_exports(path)
         closure[path] = name
         deps = []
         for line in run('otool', '-L', str(path)).splitlines()[2:]:
@@ -59,6 +77,8 @@ def package(engine, prefix, destination):
         for original, target in imports[path]:
             other = closure[target]
             subprocess.run(['install_name_tool', '-change', original, f'@rpath/{other}.framework/{other}', str(binary)], check=True)
+        if path == engine:
+            verify_engine_exports(binary)
         (folder / 'Info.plist').write_bytes(plistlib.dumps({
             'CFBundleExecutable': name, 'CFBundleIdentifier': 'org.androidemu.engine.' + name.replace('_', '-'),
             'CFBundlePackageType': 'FMWK', 'CFBundleShortVersionString': '1.0', 'CFBundleVersion': '1',

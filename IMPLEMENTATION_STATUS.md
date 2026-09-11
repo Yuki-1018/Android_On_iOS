@@ -22,6 +22,8 @@
 
 ## この環境で実行した検証
 
+- iOS用QEMUの公開シンボル一覧に埋め込み起動・JIT領域登録・metrics・ADBの9関数を追加。framework生成の前後に実Mach-Oの定義済み外部シンボルを検査し、欠落時はCIを失敗させる。アプリでも不足した関数名を表示する。packager回帰テスト6件成功。修正版IPAの実機起動は未確認。
+
 - CIで報告されたMesonの`Executables ... are not runnable`に対応し、QEMUのcross fileに`needs_exe_wrapper = true`を追加。macOS用のnative compiler/SDKとiOS用compilerを明示的に分離。Meson 1.5上で同じエラーを再現し、指定追加後に設定が成功する回帰テストを確認。GitHub Actions全体の再実行結果は未確認。
 
 - GCC 13でQEMU 10 + Goldfish shared libraryを`--enable-werror`でビルド。

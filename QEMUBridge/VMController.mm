@@ -125,12 +125,26 @@ static std::string optionPath(NSString *path) {
     }
     if (!_library) _library = dlopen([self enginePath].fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
     if (!_library) { const char *reason = dlerror(); _statusText = [NSString stringWithFormat:@"QEMU frameworkを読み込めません: %s", reason ?: "unknown loader error"]; return NO; }
-    _run = reinterpret_cast<decltype(_run)>(dlsym(_library, "android51_host_run"));
-    _pause = reinterpret_cast<decltype(_pause)>(dlsym(_library, "android51_host_pause"));
-    _stop = reinterpret_cast<decltype(_stop)>(dlsym(_library, "android51_host_stop"));
-    _metric = reinterpret_cast<decltype(_metric)>(dlsym(_library, "android51_host_metric"));
-    _region = reinterpret_cast<decltype(_region)>(dlsym(_library, "android51_tcg_set_region"));
-    if (!_run || !_pause || !_stop || !_region) { _statusText = @"QEMU ABIが一致しません"; return NO; }
+    NSMutableArray<NSString *> *missing = [NSMutableArray array];
+    auto resolve = [&](const char *name) -> void * {
+        void *symbol = dlsym(_library, name);
+        if (!symbol) [missing addObject:[NSString stringWithUTF8String:name]];
+        return symbol;
+    };
+    _run = reinterpret_cast<decltype(_run)>(resolve("android51_host_run"));
+    _pause = reinterpret_cast<decltype(_pause)>(resolve("android51_host_pause"));
+    _stop = reinterpret_cast<decltype(_stop)>(resolve("android51_host_stop"));
+    _metric = reinterpret_cast<decltype(_metric)>(resolve("android51_host_metric"));
+    _region = reinterpret_cast<decltype(_region)>(resolve("android51_tcg_set_region"));
+    for (const char *name : {"android51_adb_connected", "android51_adb_disconnect",
+                            "android51_adb_read", "android51_adb_write"}) {
+        resolve(name);
+    }
+    if (missing.count) {
+        _statusText = [NSString stringWithFormat:@"QEMU frameworkに必要な関数がありません: %@。更新したIPAを再インストールしてください。",
+                      [missing componentsJoinedByString:@", "]];
+        return NO;
+    }
     NSError *error = nil;
     if (![_audio startWithSampleRate:44100 error:&error]) { _statusText = error.localizedDescription ?: @"音声の初期化に失敗しました"; return NO; }
     if (!_region(AEJITWritableBase(), const_cast<void *>(AEJITExecutableBase()), AEJITArenaSize())) {

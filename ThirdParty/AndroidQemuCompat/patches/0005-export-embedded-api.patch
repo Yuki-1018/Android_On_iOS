@@ -1,0 +1,24 @@
+From: AndroidEmu contributors
+Subject: [PATCH] system: export the Android51 application entry points
+
+Darwin's exported_symbols_list hides all symbols not listed here, unlike
+ELF's dynamic-list. The application resolves these entry points with dlsym.
+
+SPDX-License-Identifier: GPL-2.0-or-later
+
+--- a/system/qemu.symbols
++++ b/system/qemu.symbols
+@@ -1,4 +1,13 @@
+ {
++  android51_host_run;
++  android51_host_pause;
++  android51_host_stop;
++  android51_host_metric;
++  android51_tcg_set_region;
++  android51_adb_connected;
++  android51_adb_disconnect;
++  android51_adb_read;
++  android51_adb_write;
+   qemu_init;
+   qemu_main_loop;
+   qemu_cleanup;
