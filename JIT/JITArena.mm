@@ -1,7 +1,7 @@
 #include "QEMUBridge/NativeBridge.h"
 #include <libkern/OSCacheControl.h>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
+#include <mach/vm_map.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
 #include <atomic>
@@ -14,7 +14,10 @@ extern "C" void JIT26Detach(void);
 namespace {
 std::mutex arenaMutex;
 std::atomic<bool> ready{false};
-mach_vm_address_t rx = 0, rw = 0;
+// The iOS vm_* APIs use native-width addresses on arm64.
+static_assert(sizeof(vm_address_t) == sizeof(void*), "JIT addresses must not truncate pointers");
+static_assert(sizeof(vm_size_t) == sizeof(size_t), "JIT sizes must not truncate allocations");
+vm_address_t rx = 0, rw = 0;
 size_t arenaBytes = 0;
 bool attempted = false;
 struct ProtocolDetach {
@@ -32,8 +35,8 @@ bool AEPrepareJITArena(size_t bytes, bool needsProtocol, char* error, size_t cap
     std::lock_guard lock(arenaMutex);
     auto fail = [&](const char* message) {
         if (error && capacity) std::snprintf(error, capacity, "%s", message);
-        if (rw) { mach_vm_deallocate(mach_task_self(), rw, arenaBytes); rw = 0; }
-        if (rx) { mach_vm_deallocate(mach_task_self(), rx, arenaBytes); rx = 0; }
+        if (rw) { vm_deallocate(mach_task_self(), rw, arenaBytes); rw = 0; }
+        if (rx) { vm_deallocate(mach_task_self(), rx, arenaBytes); rx = 0; }
         arenaBytes = 0; return false;
     };
     if (ready.load(std::memory_order_acquire)) {
@@ -53,18 +56,18 @@ bool AEPrepareJITArena(size_t bytes, bool needsProtocol, char* error, size_t cap
     arenaBytes = bytes;
     ProtocolDetach detach;
     if (needsProtocol) {
-        rx = reinterpret_cast<mach_vm_address_t>(JIT26PrepareRegion(nullptr, bytes));
+        rx = reinterpret_cast<vm_address_t>(JIT26PrepareRegion(nullptr, bytes));
         detach.active = true;
         if (!rx || rx % vm_page_size) { rx = 0; return fail("Universal protocol returned an invalid RX region"); }
     } else {
-        if (mach_vm_allocate(mach_task_self(), &rx, bytes, VM_FLAGS_ANYWHERE) != KERN_SUCCESS) return fail("Cannot allocate JIT region");
+        if (vm_allocate(mach_task_self(), &rx, bytes, VM_FLAGS_ANYWHERE) != KERN_SUCCESS) return fail("Cannot allocate JIT region");
     }
     vm_prot_t current = 0, maximum = 0;
-    if (mach_vm_remap(mach_task_self(), &rw, bytes, 0, VM_FLAGS_ANYWHERE, mach_task_self(), rx,
+    if (vm_remap(mach_task_self(), &rw, bytes, 0, VM_FLAGS_ANYWHERE, mach_task_self(), rx,
                       false, &current, &maximum, VM_INHERIT_NONE) != KERN_SUCCESS)
         return fail("Cannot create shared writable JIT alias");
-    if (mach_vm_protect(mach_task_self(), rw, bytes, false, VM_PROT_READ | VM_PROT_WRITE) != KERN_SUCCESS ||
-        mach_vm_protect(mach_task_self(), rx, bytes, false, VM_PROT_READ | VM_PROT_EXECUTE) != KERN_SUCCESS)
+    if (vm_protect(mach_task_self(), rw, bytes, false, VM_PROT_READ | VM_PROT_WRITE) != KERN_SUCCESS ||
+        vm_protect(mach_task_self(), rx, bytes, false, VM_PROT_READ | VM_PROT_EXECUTE) != KERN_SUCCESS)
         return fail("Cannot establish W^X JIT mappings");
     // Reserve the first page for this test. TCG must use the rest of this SAME arena.
     const uint32_t code[] = {0x52800540, 0xd65f03c0}; // mov w0,#42; ret
