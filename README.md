@@ -61,6 +61,10 @@ GitHub Actionsにも同じ経路を追加しています。成功時の`AndroidE
 
 再署名では`Frameworks/`の全frameworkを先に署名し、最後にアプリへJIT用entitlementsを適用します。未署名IPA自体には有効なentitlementsはありません。
 
+Increased Memory Limitは任意です。対応するApp ID・プロビジョニングプロファイルで署名する場合だけ、同梱の`AndroidEmu-increased-memory.entitlements`をメインアプリに使用してください。通常は従来の`AndroidEmu.entitlements`を使用します。実際の署名資格と`os_proc_available_memory()`の余裕を確認し、TCGキャッシュを自動で384／512 MiBに増やします。AndroidのRAMはGoldfishカーネルの制約で最大760 MiBのままです。資格だけで全端末の利用可能メモリが増える保証はありません。[Appleの仕様](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.increased-memory-limit)
+
+通信はSDK標準RIL向けの仮想データモデムからNATへ接続します。Android上では携帯データ接続として扱われますが、iPhoneのSIMを操作しません。ホストでのUDP往復は検証済みで、実機のDNS・Web閲覧は未検証です。Android 6取り込み時のメモリ圧迫対策として、SHA-256処理の一時データをチャンクごとに解放し、sparse空領域のCRC検証を高速化しています。実際のクラッシュログとの照合・解消確認はまだ必要です。
+
 ## ホストでの検証
 
 Linuxの依存:

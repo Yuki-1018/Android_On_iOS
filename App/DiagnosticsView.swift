@@ -14,6 +14,8 @@ struct DiagnosticsView: View {
         JIT: \(jit.state.rawValue)
         TXM: \(jit.txm.label); SPTM: \(jit.sptm.label)
         get-task-allow: \(jit.entitlement)
+        Increased Memory Limit: \(AEHasIncreasedMemoryLimit())
+        Available process memory: \(AEAvailableMemory() >> 20) MiB
         JIT usable arena bytes: \(AEJITArenaSize())
         Imported files: \(model.manifest?.files.count ?? 0)
         QEMU/Goldfish framework present: \(AEVMController().engineAvailable)

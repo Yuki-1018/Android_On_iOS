@@ -51,6 +51,31 @@ uint32_t crcUpdate(uint32_t crc, const uint8_t* p, size_t n) {
     for (size_t i = 0; i < n; ++i) crc = table[(crc ^ p[i]) & 255] ^ (crc >> 8);
     return crc;
 }
+// Advance the CRC through zero bytes in O(log n), without reading or writing
+// sparse holes. Linear transformation over GF(2), including the current state.
+uint32_t crcZeros(uint32_t crc, uint64_t bytes) {
+    auto apply = [](const std::array<uint32_t, 32>& matrix, uint32_t value) {
+        uint32_t result = 0;
+        for (unsigned bit = 0; value; ++bit, value >>= 1) {
+            if (value & 1) result ^= matrix[bit];
+        }
+        return result;
+    };
+    std::array<uint32_t, 32> matrix{};
+    for (unsigned bit = 0; bit < 32; ++bit) {
+        const uint32_t v = uint32_t{1} << bit;
+        matrix[bit] = table[v & 255] ^ (v >> 8);
+    }
+    while (bytes) {
+        if (bytes & 1) crc = apply(matrix, crc);
+        bytes >>= 1;
+        if (!bytes) break;
+        auto squared = matrix;
+        for (unsigned bit = 0; bit < 32; ++bit) squared[bit] = apply(matrix, matrix[bit]);
+        matrix = squared;
+    }
+    return crc;
+}
 }
 ImageCopyResult copyAndroidImage(const std::filesystem::path& source,
                                  const std::filesystem::path& destination, uint64_t maximumBytes) {
@@ -108,15 +133,16 @@ ImageCopyResult copyAndroidImage(const std::filesystem::path& source,
                     for (size_t j = 4; j < buffer.size(); ++j) buffer[j] = buffer[j % 4];
                 } else if (type == 0xcac3) {
                     if (payload != 0) invalid("Invalid DONT_CARE chunk length");
-                    buffer.fill(0);
+                    crc = crcZeros(crc, length);
+                    if (lseek(output.value, static_cast<off_t>(length), SEEK_CUR) < 0) invalid("Cannot create sparse output hole");
+                    producedBlocks += count;
+                    continue;
                 } else invalid("Unsupported sparse chunk type");
                 while (length) {
                     const auto n = static_cast<size_t>(std::min<uint64_t>(length, buffer.size()));
                     if (type == 0xcac1) readAll(input.value, buffer.data(), n);
                     crc = crcUpdate(crc, buffer.data(), n);
-                    if (type == 0xcac3) {
-                        if (lseek(output.value, static_cast<off_t>(n), SEEK_CUR) < 0) invalid("Cannot create sparse output hole");
-                    } else writeAll(output.value, buffer.data(), n);
+                    writeAll(output.value, buffer.data(), n);
                     length -= n;
                 }
                 producedBlocks += count;

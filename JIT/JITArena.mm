@@ -51,7 +51,14 @@ bool AEPrepareJITArena(size_t bytes, bool needsProtocol, char* error, size_t cap
     if (needsProtocol != (mode == 1)) return fail("JIT protocol does not match detected memory protection");
     if (!AEIsDebugged()) return fail("Debugger has not enabled JIT");
     if (needsProtocol && !debuggerAttached()) return fail("Universal debugger script must remain attached during preparation");
-    if (bytes != 128UL << 20 && bytes != 192UL << 20 && bytes != 256UL << 20) return fail("Unsupported TCG cache size");
+    if (bytes != 128UL << 20 && bytes != 192UL << 20 && bytes != 256UL << 20 &&
+        bytes != 384UL << 20 && bytes != 512UL << 20) return fail("Unsupported TCG cache size");
+    if (bytes > 256UL << 20) {
+        if (!AEHasIncreasedMemoryLimit()) return fail("Extended cache requires Increased Memory Limit");
+        // Headroom can shrink between selection and preparation. Fall back
+        // before changing mappings or invoking the one-shot debugger protocol.
+        if (AEAvailableMemory() < bytes + (1280UL << 20)) bytes = 256UL << 20;
+    }
     attempted = true;
     arenaBytes = bytes;
     ProtocolDetach detach;

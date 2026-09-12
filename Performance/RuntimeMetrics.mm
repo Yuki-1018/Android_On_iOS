@@ -2,6 +2,7 @@
 #import <QuartzCore/QuartzCore.h>
 #include <atomic>
 #include <mach/mach.h>
+#include "QEMUBridge/NativeBridge.h"
 @implementation AERuntimeMetrics {
     std::atomic<uint64_t> _frames, _presented, _bytes, _audioDrops;
     uint64_t _previousFrames, _previousPresented, _previousBytes;
@@ -25,6 +26,8 @@
         @"presentationsPerSecond": @((presented - _previousPresented) / elapsed),
         @"copyMiBPerSecond": @((bytes - _previousBytes) / elapsed / 1048576.0),
         @"footprintMiB": @(footprint / 1048576.0), @"audioDrops": @(_audioDrops.load()),
+        @"availableMemoryMiB": @(AEAvailableMemory() / 1048576.0),
+        @"increasedMemoryLimit": @(AEHasIncreasedMemoryLimit()),
         @"thermalState": @([NSProcessInfo processInfo].thermalState)};
     _previousFrames = frames; _previousPresented = presented; _previousBytes = bytes; _previousTime = now;
     return result;

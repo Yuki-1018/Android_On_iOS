@@ -16,7 +16,7 @@ def prepare(destination):
     overlay = destination / 'hw/arm/android51'
     overlay.mkdir(exist_ok=True)
     for source in (ROOT / 'ThirdParty/AndroidQemuCompat/qemu').glob('*'):
-        if source.suffix in ('.h', '.c'):
+        if source.suffix in ('.h', '.c', '.inc'):
             target = overlay / source.name
             if not target.exists() or source.read_bytes() != target.read_bytes():
                 shutil.copyfile(source, target)

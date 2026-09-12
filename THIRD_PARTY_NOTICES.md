@@ -24,6 +24,11 @@ The patches adapt UTM QEMU's TCG region allocator to external RW/RX mappings, di
 
 The ADB accept/start protocol was checked against AOSP `android/adb-qemud.c` at the pinned AOSP revision. The new bounded in-process transport and classic ADB client are project code under the root GPL-2.0-or-later license. No ADB server executable is bundled.
 
+The data modem's static test SIM records in `gsm_sim.inc` are adapted from
+`telephony/sim_card.c` at the same pinned AOSP revision, under GPL-2.0-only with
+the original notice retained. AT/data-call behavior was checked against AOSP
+`hardware/ril/reference-ril/reference-ril.c`, tag `android-5.1.1_r38`.
+
 ## Other references
 
 UTM (Apache-2.0 application), UTM QEMU (GPL and per-file licenses), AOSP libsparse (Apache-2.0), AOSP Android input layouts and Linux input documentation were consulted for architecture or formats. Exact selected revisions and integration status are listed in `ThirdParty/README.md`. Their licensing is not replaced by the license of the new app.

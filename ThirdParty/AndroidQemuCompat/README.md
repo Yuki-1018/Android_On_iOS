@@ -20,7 +20,7 @@ This directory contains an ARMv7 Goldfish machine overlay for pinned UTM QEMU 10
 | `ff040000` / 12 | RGB565 guest framebuffer (default 540×960) converted to BGRA32, unchanged-row suppression across page flips, virtual 60 Hz VSYNC and base-update IRQ |
 | `ff050000` / 13 | Linux input capabilities, ten MT Protocol B slots, bounded event queue |
 | `ff060000` / 14 | Minimal AC/full battery reporting |
-| `ff070000` / 15 | Goldfish v1 pipes: connector, bounded pingpong, framed qemud boot-properties and in-process ADB |
+| `ff070000` / 15 | Goldfish v1 pipes: connector, bounded pingpong, framed qemud boot-properties, SDK data modem and in-process ADB |
 
 The original Goldfish board has no SMP startup path. This implementation therefore uses one vCPU; enabling a second CPU or MTTCG is not a tested performance option. The iOS app chooses a bounded panel height to match the launch window; input axis maxima use the same board dimensions.
 
@@ -33,6 +33,18 @@ The input device uses the stock API22 `qwerty2.idc` touchscreen classification. 
 `android51_tcg_set_region(rw, rx, bytes)` accepts disjoint, page-aligned prepared aliases once, before QEMU initialization on the launch thread. The allocator consumes that region and rejects an unprepared allocation on physical iOS. APRR switching and the older UTM breakpoint path are disabled for that iOS path. macOS/Linux retain host allocation. The app supplies `AEJITWritableBase`, `AEJITExecutableBase`, and `AEJITArenaSize` (excluding the JIT self-test page). The iOS `AEVMController` now registers those mappings before calling `android51_host_run` on its owned execution thread. Host TCG execution does not validate iOS W^X behavior.
 
 ## Tests and outstanding integration
+
+`qemud:gsm` now supplies the reference RIL with a virtual test SIM, operator
+registration, radio power state and one IPv4 PDP context over `eth0`. The SDK
+init scripts configure 10.0.2.15, gateway 10.0.2.2 and DNS 10.0.2.3; reference-ril
+publishes these to Android's connectivity service. The existing
+`android.qemud=1` argument previously selected a modem service that was missing.
+This is an emulated data network, not the iPhone's SIM or telephony service.
+Calls/SMS and unknown AT commands return errors. A virtual registered link is
+not proof of Internet access; Android's connectivity checks remain enabled.
+QTest covers split commands, queue backpressure, radio off/on and PDP state,
+plus a real UDP round trip through SMC91C111 and libslirp to a local host socket.
+Real-device DNS/HTTP and Android 6 compatibility still require device testing.
 
 `Tests/QEMU/test_goldfish.py` exercises actual QEMU MMIO/DMA, timer and display IRQs, NAND persistence/read-only protection, descriptor preservation, audio, input capabilities, and split boot-property frames. A separate TCG process executes generated ARM instructions through the board's boot loader and emits a serial marker. No Android images are used, and this marker is not an Android boot result.
 

@@ -58,7 +58,8 @@ import UIKit
                         let result = await Task.detached(priority: .userInitiated) { () -> String? in
                             var message = [CChar](repeating: 0, count: 512)
                             let capacity = message.count
-                            let ok = AEPrepareJITArena(cache.rawValue << 20, protocolRequired, &message, capacity)
+                            let bytes = Int(AERecommendedCacheMiB(UInt32(cache.rawValue))) << 20
+                            let ok = AEPrepareJITArena(bytes, protocolRequired, &message, capacity)
                             return ok ? nil : message.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
                         }.value
                         if let result { self.preparationFailed = true; self.state = .failed; self.detail = result }

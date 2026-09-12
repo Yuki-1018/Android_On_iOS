@@ -34,7 +34,9 @@ class GoldfishTests(unittest.TestCase):
         self.addCleanup(self.log.close)
         self.process = subprocess.Popen([
             str(QEMU), '-machine', 'android51,audiodev=audio', '-accel', 'qtest', '-m', '128M',
-            '-display', 'none', '-nodefaults', '-nic', 'none', '-audiodev', 'none,id=audio',
+            '-display', 'none', '-nodefaults', '-nic',
+            'user,model=smc91c111,ipv6=off' if self._testMethodName == 'test_nat_udp_round_trip' else 'none',
+            '-audiodev', 'none,id=audio',
             '-qtest', f'unix:{path},server=on,wait=off',
             '-qmp', f'unix:{directory / "qmp.sock"},server=on,wait=off',
             '-drive', f'if=none,id=system,file={self.system},format=raw,readonly=on',
@@ -284,6 +286,116 @@ class GoldfishTests(unittest.TestCase):
         self.write(base + 16, 0x8000)
         self.write(base, command)
         return self.read(base + 4)
+
+    def test_nat_udp_round_trip(self):
+        # Actual guest Ethernet -> libslirp -> host UDP -> guest, no Internet
+        # dependency and no host-forwarded/listening QEMU port.
+        base = 0xff020000
+        def write(offset, value, kind='w'):
+            self.cmd(f'write{kind} {base + offset:#x} {value:#x}')
+        def read(offset, kind='w'):
+            return int(self.cmd(f'read{kind} {base + offset:#x}'), 0)
+        write(14, 0); write(0, 0x81); write(4, 0x300)
+        write(14, 1); write(12, 0x800)
+        write(14, 2)
+        def send(frame):
+            frame = frame.ljust(64, b'\0')
+            if len(frame) % 2: frame += b'\0'
+            write(0, 0x20)
+            packet = read(3, 'b')
+            self.assertLess(packet, 4)
+            write(2, packet, 'b'); write(6, 0x4000)
+            data = struct.pack('<HH', 0, len(frame) + 6) + frame + b'\0\0'
+            for offset in range(0, len(data), 2):
+                write(8, int.from_bytes(data[offset:offset + 2], 'little'))
+            write(0, 0xc0)
+        def receive():
+            deadline = time.monotonic() + 3
+            while read(4) & 0x8000:
+                self.assertLess(time.monotonic(), deadline, 'NAT response timed out')
+                time.sleep(0.01)
+            write(6, 0xe000)
+            status, length = read(8), read(8)
+            self.assertLess(length, 2048)
+            data = b''.join(read(8).to_bytes(2, 'little') for _ in range((length - 4) // 2))
+            write(0, 0x80)
+            return data[:length - 6 + bool(status & 0x1000)]
+        mac = bytes.fromhex('525400123456')
+        guest, gateway = socket.inet_aton('10.0.2.15'), socket.inet_aton('10.0.2.2')
+        send(b'\xff' * 6 + mac + b'\x08\x06' + struct.pack('!HHBBH', 1, 0x800, 6, 4, 1) +
+             mac + guest + bytes(6) + gateway)
+        arp = receive()
+        self.assertEqual(arp[12:14], b'\x08\x06')
+        self.assertEqual(arp[20:22], b'\0\x02')
+        gateway_mac = arp[22:28]
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as host:
+            host.bind(('127.0.0.1', 0)); host.settimeout(3)
+            payload = b'ANDROIDEMU_NAT_TEST'
+            udp = struct.pack('!4H', 42000, host.getsockname()[1], 8 + len(payload), 0) + payload
+            ip = struct.pack('!BBHHHBBH4s4s', 0x45, 0, 20 + len(udp), 1, 0, 64, 17, 0, guest, gateway)
+            checksum = sum(struct.unpack('!10H', ip))
+            while checksum >> 16: checksum = (checksum & 65535) + (checksum >> 16)
+            ip = ip[:10] + struct.pack('!H', checksum ^ 65535) + ip[12:]
+            send(gateway_mac + mac + b'\x08\0' + ip + udp)
+            received, address = host.recvfrom(2048)
+            self.assertEqual(received, payload)
+            host.sendto(payload, address)
+            response = receive()
+            self.assertEqual(response[12:14], b'\x08\0')
+            self.assertEqual(response[42:42 + len(payload)], payload)
+
+    def test_gsm_data_registration_and_context(self):
+        self.assertEqual(self.pipe(1), 0)
+        invite = b'pipe:qemud:gsm\0'
+        self.assertEqual(self.pipe(4, payload=invite), len(invite))
+        def command(text):
+            data = text.encode() + b'\r'
+            # Real RIL writes can split at any byte boundary.
+            self.assertEqual(self.pipe(4, payload=data[:3]), 3)
+            self.assertEqual(self.pipe(4, payload=data[3:]), len(data) - 3)
+            size = self.pipe(6, size=4096)
+            self.assertLess(size, 4096)
+            return self.get(0x8000, size)
+        self.assertIn(b'+CPIN: READY', command('AT+CPIN?'))
+        self.assertIn(b'310260000000000', command('AT+CIMI'))
+        self.assertIn(b'OK', command('AT+CGREG=2'))
+        self.assertIn(b'+CGREG: 2,1,"0001","0001",3', command('AT+CGREG?'))
+        self.assertIn(b'+CRSM: 144,0,00000003', command('AT+CRSM=176,28589,0,0,4'))
+        self.assertIn(b'OK', command('AT+CGDCONT=1,"IP","internet",,0,0'))
+        self.assertIn(b'+CGACT: 1,0', command('AT+CGACT?'))
+        self.assertIn(b'OK', command('ATD*99***1#'))
+        self.assertIn(b'OK', command('AT+CGDCONT=1,"IPV4V6","dual",,0,0'))
+        self.assertIn(b'"IP","dual","10.0.2.15"', command('AT+CGDCONT?'))
+        self.assertIn(b'OK', command('AT+CGDCONT=1,"IP","internet",,0,0'))
+        self.assertIn(b'+CGACT: 1,1', command('AT+CGACT?'))
+        self.assertIn(b'"internet","10.0.2.15"', command('AT+CGDCONT?'))
+        self.assertIn(b'ERROR', command('AT+UNSUPPORTED'))
+        self.assertIn(b'+CGREG: 0', command('AT+CFUN=0'))
+        self.assertIn(b'+CGACT: 1,0', command('AT+CGACT?'))
+        self.assertIn(b'ERROR', command('ATD*99***1#'))
+        self.assertIn(b'+CGREG: 1', command('AT+CFUN=1'))
+        self.assertIn(b'OK', command('ATD*99***1#'))
+        self.assertEqual(self.pipe(2), 0)
+
+    def test_gsm_backpressure_and_oversized_command(self):
+        self.assertEqual(self.pipe(1), 0)
+        invite = b'pipe:qemud:gsm\0'
+        self.assertEqual(self.pipe(4, payload=invite), len(invite))
+        payload = b'AT\r' * 2000
+        sent = self.pipe(4, payload=payload)
+        self.assertGreater(sent, 0)
+        self.assertLess(sent, len(payload))
+        self.assertEqual(self.pipe(3) & 2, 0)
+        size = self.pipe(6, size=8192)
+        replies = self.get(0x8000, size)
+        self.assertEqual(self.pipe(3) & 2, 2)
+        rest = payload[sent:]
+        self.assertEqual(self.pipe(4, payload=rest), len(rest))
+        size = self.pipe(6, size=8192)
+        replies += self.get(0x8000, size)
+        self.assertEqual(replies.count(b'OK'), 2000)
+        self.assertEqual(self.pipe(4, payload=b'A' * 1024), 0xfffffffc)
+        self.assertEqual(self.pipe(2), 0)
 
     def test_pipe_boot_properties_partial_frames_and_wakeup(self):
         self.assertEqual(self.pipe(1), 0)

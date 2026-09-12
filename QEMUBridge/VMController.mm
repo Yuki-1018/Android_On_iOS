@@ -123,6 +123,9 @@ static std::string optionPath(NSString *path) {
     }
     // The stock Goldfish 3.4 kernel has a 760 MiB lowmem ceiling.
     ram = MIN(ram, 760U);
+    // Use the arena actually prepared (possibly enlarged by the optional
+    // entitlement), rather than the user's pre-preparation preference.
+    cache = (uint32_t)((AEJITArenaSize() + (1U << 20) - 1) >> 20);
     // Use the active iPhone/iPad window ratio, with bounded guest pixels.
     UIWindowScene *scene = nil;
     for (UIScene *candidate in [UIApplication sharedApplication].connectedScenes) {

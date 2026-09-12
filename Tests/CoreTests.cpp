@@ -4,6 +4,7 @@
 #include "Audio/PCMRing.hpp"
 #include "Display/FrameMailbox.hpp"
 #include "ADB/Protocol.hpp"
+#include "Performance/MemoryBudget.hpp"
 #include <array>
 #include <atomic>
 #include <filesystem>
@@ -139,6 +140,11 @@ void adbTests() {
 }
 }
 int main() {
+    check(emu::tcgCacheMiB(192, false, 8ULL << 30) == 192);
+    check(emu::tcgCacheMiB(192, true, 8ULL << 30) == 512);
+    check(emu::tcgCacheMiB(256, true, 1700ULL << 20) == 384);
+    check(emu::tcgCacheMiB(128, true, 1500ULL << 20) == 128);
+    check(emu::tcgCacheMiB(192, true, 0) == 192);
     static_assert(emu::linuxKeyForHID(4) == 30);
     static_assert(emu::linuxKeyForHID(29) == 44);
     static_assert(emu::linuxKeyForHID(74) == 102);

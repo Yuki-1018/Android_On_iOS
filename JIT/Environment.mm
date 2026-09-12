@@ -9,6 +9,8 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <mutex>
+#include <os/proc.h>
+#include "Performance/MemoryBudget.hpp"
 
 namespace {
 template<class T> T symbol(void* handle, const char* name) { return reinterpret_cast<T>(dlsym(handle, name)); }
@@ -33,7 +35,7 @@ int memoryMapFeature(CFStringRef feature) {
     CFRelease(keys); return result;
 }
 }
-bool AEHasGetTaskAllow(void) {
+static bool hasEntitlement(CFStringRef name) {
     static void* security = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY | RTLD_LOCAL);
     if (!security) return false;
     auto create = symbol<CFTypeRef (*)(CFAllocatorRef)>(security, "SecTaskCreateFromSelf");
@@ -41,10 +43,16 @@ bool AEHasGetTaskAllow(void) {
     if (!create || !copy) return false;
     auto task = create(kCFAllocatorDefault);
     if (!task) return false;
-    auto value = copy(task, CFSTR("get-task-allow"), nullptr);
+    auto value = copy(task, name, nullptr);
     const bool allowed = value && CFEqual(value, kCFBooleanTrue);
     if (value) CFRelease(value);
     CFRelease(task); return allowed;
+}
+bool AEHasGetTaskAllow(void) { return hasEntitlement(CFSTR("get-task-allow")); }
+bool AEHasIncreasedMemoryLimit(void) { return hasEntitlement(CFSTR("com.apple.developer.kernel.increased-memory-limit")); }
+uint64_t AEAvailableMemory(void) { return os_proc_available_memory(); }
+uint32_t AERecommendedCacheMiB(uint32_t requested) {
+    return emu::tcgCacheMiB(requested, AEHasIncreasedMemoryLimit(), AEAvailableMemory());
 }
 bool AEIsDebugged(void) {
     auto csops = symbol<int (*)(pid_t, unsigned int, void*, size_t)>(RTLD_DEFAULT, "csops");

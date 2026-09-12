@@ -6,12 +6,18 @@ get-task-allow=true from AndroidEmu.entitlements for the main app process.
 Re-sign EVERY embedded framework in Frameworks/ before signing the app.
 Do not apply JIT entitlements to the library frameworks themselves.
 An unsigned IPA does not carry effective entitlements.
+Optional: if your App ID and provisioning profile authorize Increased Memory
+Limit, sign the main app using AndroidEmu-increased-memory.entitlements instead.
+The certificate alone is insufficient; preserve this entitlement in the final
+signature. Otherwise use AndroidEmu.entitlements as before. The app checks the
+effective entitlement AND os_proc_available_memory before automatically raising
+the TCG cache to 384/512 MiB. Guest RAM remains capped at 760 MiB by the kernel.
 Use iOS 17+ on an arm64 physical device. Legacy debugger JIT is used before iOS 26; iOS 26+ selects the universal protocol when required. Enable Developer Mode as needed
 by the signing method. StikDebug is a separate app and is not bundled.
 Use the universal.js protocol where TXM/SPTM is present. A successful URL
 launch does not prove JIT readiness. Check the app's diagnostics.
 The JIT allocator is experimental and requires real-device validation.
-No legacy JIT or interpreter fallback is provided.
+No interpreter fallback is provided.
 For development in Xcode, do not use an ordinary LLDB attachment as the
 universal script: unhandled brk instructions terminate the process.
 Corresponding source: obtain the repository at the same revision as this

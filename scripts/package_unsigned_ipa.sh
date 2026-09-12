@@ -15,5 +15,6 @@ mkdir "$staging/Payload"
 ditto "$app" "$staging/Payload/AndroidEmu.app"
 ditto -c -k --keepParent "$staging/Payload" build/artifacts/AndroidEmu-development-unsigned.ipa
 cp AndroidEmu.entitlements build/artifacts/AndroidEmu.entitlements
+cp AndroidEmu-increased-memory.entitlements build/artifacts/AndroidEmu-increased-memory.entitlements
 cp scripts/signing-notes.txt build/artifacts/signing-notes.txt
 python3 scripts/verify_artifact.py build/artifacts/AndroidEmu-development-unsigned.ipa

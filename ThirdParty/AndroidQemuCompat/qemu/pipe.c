@@ -11,23 +11,25 @@
 */
 /* AndroidEmu: bounded v1 pipe MMIO port based on goldfish/pipe.c and
  * android/{hw-qemud,boot-properties}.c. Implements boot-properties and
- * pingpong; unknown services return errors, not fabricated success.
+ * pingpong, ADB and the SDK data modem; unknown services return errors.
  */
 #include "qemu/osdep.h"
 #include "android51.h"
 #include "adb.h"
+#include "gsm.h"
 #include "system/reset.h"
 #include "qemu/bswap.h"
 
 #define GF_PIPE_LIMIT 64
 #define GF_PIPE_BYTES 8192
-typedef enum GFService { GF_CONNECT, GF_BOOT_PROPERTIES, GF_PINGPONG, GF_ADB_ACCEPT, GF_ADB_START, GF_ADB_DATA, GF_CLOSED } GFService;
+typedef enum GFService { GF_CONNECT, GF_BOOT_PROPERTIES, GF_PINGPONG, GF_GSM, GF_ADB_ACCEPT, GF_ADB_START, GF_ADB_DATA, GF_CLOSED } GFService;
 typedef struct GFPipe {
     bool used;
     uint32_t channel, wanted, wakes;
     GFService service;
     uint8_t incoming[GF_PIPE_BYTES], outgoing[GF_PIPE_BYTES];
     unsigned received, queued;
+    GFGSM gsm;
 } GFPipe;
 typedef struct GFPipes {
     Android51State *board;
@@ -39,6 +41,13 @@ typedef struct GFPipes {
     QEMUTimer *adb_timer;
     GFPipe *adb;
 } GFPipes;
+static bool pipe_writable(GFPipe *p)
+{
+    if (p->service == GF_CLOSED) { return false; }
+    if (p->service == GF_ADB_DATA) { return gf_adb_guest_writable() != 0; }
+    if (p->service == GF_GSM) { return GF_PIPE_BYTES - p->queued >= 1024; }
+    return p->queued < GF_PIPE_BYTES;
+}
 static void pipes_irq(GFPipes *s)
 {
     bool wake = false;
@@ -47,7 +56,7 @@ static void pipes_irq(GFPipes *s)
 }
 static void pipe_wake(GFPipes *s, GFPipe *p)
 {
-    uint32_t ready = (p->queued ? 2 : 0) | ((p->service == GF_ADB_DATA ? gf_adb_guest_writable() != 0 : p->queued < GF_PIPE_BYTES) ? 4 : 0);
+    uint32_t ready = (p->queued ? 2 : 0) | (pipe_writable(p) ? 4 : 0);
     if (p->service == GF_CLOSED) { ready |= 1; }
     p->wakes |= (ready & p->wanted) | (ready & 1);
     p->wanted &= ~p->wakes;
@@ -114,6 +123,7 @@ static int32_t pipe_send(GFPipes *s, GFPipe *p)
             p->incoming[p->received++] = ch;
             if (!ch) {
                 if (!strcmp((char *)p->incoming, "pipe:qemud:boot-properties")) { p->service = GF_BOOT_PROPERTIES; }
+                else if (!strcmp((char *)p->incoming, "pipe:qemud:gsm")) { p->service = GF_GSM; p->gsm.radio = true; }
                 else if ((!strcmp((char *)p->incoming, "pipe:qemud:adb") ||
                           !strcmp((char *)p->incoming, "pipe:qemud:adb:5555")) && !s->adb) {
                     p->service = GF_ADB_ACCEPT; s->adb = p;
@@ -124,6 +134,25 @@ static int32_t pipe_send(GFPipes *s, GFPipe *p)
                 break;
             }
         }
+    }
+    if (p->service == GF_GSM) {
+        while (offset < s->length) {
+            if (sizeof(p->outgoing) - p->queued < 1024) { return offset ? (int32_t)offset : -2; }
+            uint8_t ch = buffer[offset++];
+            if (ch == '\r' || ch == '\n') {
+                if (p->received) {
+                    char response[1024];
+                    p->incoming[p->received] = 0;
+                    gf_gsm_command(&p->gsm, (char *)p->incoming, response);
+                    size_t n = strlen(response);
+                    memcpy(p->outgoing + p->queued, response, n); p->queued += n;
+                    p->received = 0;
+                }
+            } else if (ch < 32 || ch > 126 || p->received >= 1023) {
+                p->service = GF_CLOSED; return -4;
+            } else { p->incoming[p->received++] = ch; }
+        }
+        return s->length;
     }
     if (p->service == GF_ADB_ACCEPT || p->service == GF_ADB_START) {
         const char *expected = p->service == GF_ADB_ACCEPT ? "accept" : "start";
@@ -176,7 +205,7 @@ static void pipe_command(GFPipes *s, uint32_t command)
     if (command == 2) { if (s->adb == p) { gf_adb_connect(false); s->adb = NULL; } memset(p, 0, sizeof(*p)); s->result = 0; pipes_irq(s); return; }
     if (p->service == GF_CLOSED) { s->result = -4; return; }
     switch (command) {
-    case 3: s->result = (p->queued ? 1 : 0) | ((p->service == GF_ADB_DATA ? gf_adb_guest_writable() != 0 : p->queued < GF_PIPE_BYTES) ? 2 : 0); break;
+    case 3: s->result = (p->queued ? 1 : 0) | (pipe_writable(p) ? 2 : 0); break;
     case 4: s->result = pipe_send(s, p); break;
     case 5: p->wanted |= 4; s->result = 0; break;
     case 6: {

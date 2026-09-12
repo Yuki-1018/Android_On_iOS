@@ -54,6 +54,8 @@ struct LibraryView: View {
                                     ForEach(VMConfiguration.Cache.allCases, id: \.self) { Text("\($0.rawValue) MiB").tag($0) }
                                 }.disabled(jit.state == .preparing || jit.state == .ready)
                                 LabeledContent("vCPU", value: "1")
+                                Text("拡張メモリの資格を持つ署名と十分な空きメモリがある場合、変換キャッシュを自動で最大512 MiBに拡張します。AndroidのRAMはカーネルの制約で最大760 MiBです。")
+                                    .font(.footnote).foregroundStyle(.secondary)
                                 Picker("描画する画面幅", selection: $model.configuration.resolution) {
                                     ForEach(VMConfiguration.Resolution.allCases, id: \.self) { resolution in
                                         Text("\(resolution.width) px" + (resolution == .performance ? "（速度優先）" : "")).tag(resolution)

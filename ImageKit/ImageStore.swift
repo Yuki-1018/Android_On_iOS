@@ -69,10 +69,14 @@ actor ImageStore {
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         var sha = SHA256()
-        while let data = try file.read(upToCount: 1 << 20), !data.isEmpty {
+        // FileHandle may return autoreleased NSData on Darwin. Actor jobs do
+        // not drain a pool per iteration: large SDK images could retain GiBs.
+        while try autoreleasepool(invoking: { () throws -> Bool in
             try Task.checkCancellation()
+            guard let data = try file.read(upToCount: 1 << 20), !data.isEmpty else { return false }
             sha.update(data: data)
-        }
+            return true
+        }) {}
         return sha.finalize().map { String(format: "%02x", $0) }.joined()
     }
     func importDirectory(_ directory: URL) throws -> ImageManifest {
