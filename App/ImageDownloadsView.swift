@@ -25,9 +25,16 @@ struct ImageDownloadsView: View {
                     }.disabled(model.importing)
                 }
             }
+            if let failure = model.errorMessage {
+                Section {
+                    Label(failure, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                    Text("通信を確認して、イメージを選び直すと再試行できます。").font(.footnote)
+                    Button("エラーを閉じる") { model.errorMessage = nil }
+                }
+            }
             if model.downloading {
                 Section {
-                    ProgressView(model.transferStatus)
+                    ProgressView(value: model.transferProgress) { Text(model.transferStatus) }
                     Button("キャンセル", role: .cancel) { model.cancelDownload() }
                 }
             }

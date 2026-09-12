@@ -2,6 +2,58 @@ import XCTest
 @testable import AndroidEmuModels
 
 final class ModelTests: XCTestCase {
+    func testEmptyLibraryAndLastProfileRemoval() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ProfileStore(root: root)
+        let empty = try await store.load()
+        XCTAssertTrue(empty.isEmpty)
+        let profile = AndroidProfile(id: UUID(), name: "Android", legacy: false)
+        try await store.save([profile])
+        try await store.remove(profile, remaining: [])
+        let reopened = try await ProfileStore(root: root).load()
+        XCTAssertTrue(reopened.isEmpty)
+    }
+    func testDownloadRetryPolicy() {
+        XCTAssertEqual(DownloadRetry.delay(error: URLError(.networkConnectionLost), failedAttempt: 1), 1)
+        XCTAssertEqual(DownloadRetry.delay(error: URLError(.timedOut), failedAttempt: 3), 4)
+        XCTAssertNil(DownloadRetry.delay(error: URLError(.networkConnectionLost), failedAttempt: 4))
+        XCTAssertNil(DownloadRetry.delay(error: URLError(.cancelled), failedAttempt: 1))
+        XCTAssertNil(DownloadRetry.delay(error: URLError(.serverCertificateUntrusted), failedAttempt: 1))
+        XCTAssertNil(DownloadRetry.delay(error: DownloadHTTPError(status: 404, retryAfter: nil), failedAttempt: 1))
+        XCTAssertEqual(DownloadRetry.delay(error: DownloadHTTPError(status: 503, retryAfter: "12"), failedAttempt: 1), 12)
+        XCTAssertNil(DownloadRetry.delay(error: DownloadHTTPError(status: 429, retryAfter: "3600"), failedAttempt: 1))
+        XCTAssertNil(DownloadRetry.delay(error: EmuError.storage("full"), failedAttempt: 1))
+    }
+    func testRetryCarriesResumeDataAndStopsAtLimit() async throws {
+        actor Attempts {
+            var count = 0
+            var tokens: [Data?] = []
+            func run(_ token: Data?) throws -> URL {
+                count += 1; tokens.append(token)
+                if count == 1 { throw NSError(domain: NSURLErrorDomain, code: URLError.networkConnectionLost.rawValue,
+                                              userInfo: [NSURLSessionDownloadTaskResumeData: Data([1, 2, 3])]) }
+                return URL(fileURLWithPath: "/tmp/complete")
+            }
+        }
+        let attempts = Attempts()
+        let url = try await DownloadRetry.perform(progress: { _, _ in }, sleep: { _ in }, operation: { try await attempts.run($0) })
+        XCTAssertEqual(url.lastPathComponent, "complete")
+        let tokens = await attempts.tokens
+        XCTAssertEqual(tokens.count, 2)
+        XCTAssertNil(tokens[0]); XCTAssertEqual(tokens[1], Data([1, 2, 3]))
+        actor Failures {
+            var count = 0
+            func run() throws -> URL { count += 1; throw URLError(.timedOut) }
+        }
+        let failures = Failures()
+        do {
+            _ = try await DownloadRetry.perform(progress: { _, _ in }, sleep: { _ in }, operation: { _ in try await failures.run() })
+            XCTFail("Retry loop must terminate")
+        } catch { XCTAssertEqual((error as NSError).code, URLError.timedOut.rawValue) }
+        let count = await failures.count
+        XCTAssertEqual(count, 4)
+    }
     func testProfileCatalogMigrationAndRemoval() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
