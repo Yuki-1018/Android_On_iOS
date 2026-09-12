@@ -17,6 +17,7 @@ def generate():
         raise ValueError('Unexpected UTM build-input revision')
     script = (UTM / 'scripts/build_dependencies.sh').read_text()
     script = script.replace('IOS_SDKMINVER="14.0"', 'IOS_SDKMINVER="17.0"')
+    script = script.replace('env -i PATH=$PATH xcodebuild', 'env -i PATH="$PATH" DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}" xcodebuild')
     script = script.replace('PATCHES_DIR="$BASEDIR/../patches"', 'PATCHES_DIR="${ANDROID51_UTM_ROOT:?}/patches"')
     script = script.replace('source "$PATCHES_DIR/sources"', 'source "$PATCHES_DIR/sources"\nICONV_SRC="${ICONV_SRC/http:/https:}"\nGETTEXT_SRC="${GETTEXT_SRC/http:/https:}"')
     overrides = r'''
@@ -30,8 +31,10 @@ download_all () {
     mkdir -p "$BUILD_DIR"
     for src in "$PKG_CONFIG_SRC" "$FFI_SRC" "$ICONV_SRC" "$GETTEXT_SRC" "$GLIB_SRC" "$PIXMAN_SRC" "$SLIRP_SRC"; do download "$src"; done
     clone "$LIBUCONTEXT_REPO" "$LIBUCONTEXT_COMMIT"
+    clone "$WEBKIT_REPO" "$WEBKIT_COMMIT" "$WEBKIT_SUBDIRS"
 }
 build_qemu_dependencies () {
+    build_angle
     build "$FFI_SRC"
     build "$ICONV_SRC"
     gl_cv_onwards_func_strchrnul=future build "$GETTEXT_SRC" --disable-java

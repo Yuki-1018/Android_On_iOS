@@ -15,6 +15,7 @@
 #include "qemu/osdep.h"
 #include "android51.h"
 #include "android51_host.h"
+#include "gpu.h"
 #include "ui/console.h"
 #include "exec/ram_addr.h"
 #include "system/reset.h"
@@ -28,7 +29,7 @@ typedef struct GFDisplay {
     QemuConsole *console;
     QEMUTimer *vsync;
     uint32_t base, status, enabled;
-    bool valid, blank, invalidate, base_pending, presented;
+    bool valid, blank, invalidate, base_pending, presented, gpu_presented;
     uint8_t *scanout;
 } GFDisplay;
 static void display_irq(GFDisplay *s)
@@ -39,6 +40,27 @@ static void display_update(void *opaque)
 {
     GFDisplay *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->console);
+    if (s->board->gpu_ready) {
+        if (s->blank && s->gpu_presented) {
+            if (s->invalidate) {
+                for (unsigned y = 0; y < GF_HEIGHT; ++y) {
+                    uint8_t *row = surface_data(surface) + y * surface_stride(surface);
+                    for (unsigned x = 0; x < GF_WIDTH; ++x) { stl_le_p(row + x * 4, 0xff000000); }
+                }
+                dpy_gfx_update(s->console, 0, 0, GF_WIDTH, GF_HEIGHT);
+                android51_host_frame(surface_data(surface), surface_stride(surface), 0, 0, GF_WIDTH, GF_HEIGHT);
+                s->invalidate = false;
+            }
+            return;
+        }
+        unsigned first, rows;
+        if (ae_gpu_frame_region(surface_data(surface), (size_t)GF_WIDTH * GF_HEIGHT * 4, &first, &rows)) {
+            s->gpu_presented = true;
+            dpy_gfx_update(s->console, 0, first, GF_WIDTH, rows);
+            android51_host_frame(surface_data(surface), surface_stride(surface), 0, first, GF_WIDTH, rows);
+        }
+        if (s->gpu_presented) { return; }
+    }
     MemoryRegion *ram = MACHINE(s->board)->ram;
     uint64_t bytes = (uint64_t)GF_WIDTH * GF_HEIGHT * 2;
     int first = -1, last = -1;
@@ -78,7 +100,11 @@ static void display_update(void *opaque)
         android51_host_frame(surface_data(surface), surface_stride(surface), 0, first, GF_WIDTH, last - first + 1);
     }
 }
-static void display_invalidate(void *opaque) { ((GFDisplay *)opaque)->invalidate = true; }
+static void display_invalidate(void *opaque) {
+    GFDisplay *s = opaque;
+    s->invalidate = true;
+    if (s->board->gpu_ready) { ae_gpu_invalidate_frame(); }
+}
 static const GraphicHwOps graphic_ops = { .gfx_update = display_update, .invalidate = display_invalidate };
 static void display_tick(void *opaque)
 {
@@ -123,6 +149,7 @@ static void display_write(void *opaque, hwaddr offset, uint64_t value, unsigned 
     case 24:
         if (s->blank != (value != 0)) { s->presented = false; s->invalidate = true; }
         s->blank = value != 0;
+        if (!s->blank && s->board->gpu_ready) { ae_gpu_invalidate_frame(); }
         break;
     }
     display_irq(s);

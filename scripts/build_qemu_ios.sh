@@ -27,9 +27,24 @@ ios_prefix="$repo_dir/build/ios-dependencies/sysroot-iOS-arm64"
 ios_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path)"
 ios_cc="$(xcrun --sdk iphoneos --find clang)"
 ios_cxx="$(xcrun --sdk iphoneos --find clang++)"
+python3 scripts/normalize_angle.py "$ios_prefix"
+# Build wire-code generators with the macOS SDK, then compile the renderer for iOS.
+cmake -S ThirdParty/EmuGL -B build/emugl-generator -G Ninja \
+  -DCMAKE_C_COMPILER="$macos_cc" -DCMAKE_CXX_COMPILER="$macos_cxx" \
+  -DCMAKE_OSX_SYSROOT="$macos_sdk_path" -DEMUGL_GENERATOR_ONLY=ON
+cmake --build build/emugl-generator --target emugen --parallel 2
+cmake -S ThirdParty/EmuGL -B build/emugl-ios -G Ninja \
+  -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_SYSROOT="$ios_sdk_path" -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+  -DCMAKE_C_COMPILER="$ios_cc" -DCMAKE_CXX_COMPILER="$ios_cxx" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$ios_prefix" \
+  -DCMAKE_PREFIX_PATH="$ios_prefix" -DEMUGEN="$repo_dir/build/emugl-generator/emugen"
+cmake --build build/emugl-ios --parallel 2
+cmake --install build/emugl-ios
 export PKG_CONFIG="$ios_prefix/host/bin/pkg-config"
 export PKG_CONFIG_LIBDIR="$ios_prefix/lib/pkgconfig:$ios_prefix/share/pkgconfig"
 export PKG_CONFIG_PATH=""
+"$PKG_CONFIG" --exists androidemugl || { echo "Missing GLES renderer dependency" >&2; exit 1; }
 ios_flags="-target arm64-apple-ios17.0 -isysroot $ios_sdk_path -I$ios_prefix/include"
 ios_ldflags="-target arm64-apple-ios17.0 -isysroot $ios_sdk_path -L$ios_prefix/lib -Wl,-headerpad_max_install_names"
 mkdir -p build/qemu-ios

@@ -18,6 +18,13 @@ jobs:
           cmake -S . -B build/native -DCMAKE_BUILD_TYPE=Debug -DEMU_SANITIZE=ON
           cmake --build build/native --parallel 2
           ctest --test-dir build/native --output-on-failure
+      - name: Build and exercise real GLES renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libegl-mesa0 libgles1 libgles2 libgl1-mesa-dri libx11-dev
+          cmake -S ThirdParty/EmuGL -B build/emugl-host -DEMUGL_TESTS=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build/emugl-host --parallel 2
+          ctest --test-dir build/emugl-host --output-on-failure
       - name: Verify tooling
         run: python3 -m unittest discover -s Tests -p 'test_*.py' -v
   goldfish:

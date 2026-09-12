@@ -1,29 +1,39 @@
-# Android 6 Browser / WebViewのGPUクラッシュ調査
+# Android Browser / WebViewのGPU経路
 
-現状: 原因の経路は特定済み。GLES 2対応レンダラーは未実装で、Browser / WebViewの正常起動・描画はまだ確認できていない。
+実装状況: ホストレンダラー、Goldfish pipe、gralloc表示、iOS ANGLEビルド・依存ライブラリ梱包を追加した。Linuxで実GLES2描画とGPU付きQEMUのテストは成功。iOS SDKがない本環境では、iOSコンパイル・ANGLE Metal実機動作・Android Browser/WebView起動は未検証であり、「全端末で完全解決」とはまだ確認できない。
 
-## 現在の実装とログの対応
+## 原因
 
-- `QEMUBridge/VMController.mm`のカーネル引数、および`ThirdParty/AndroidQemuCompat/qemu/pipe.c`の起動プロパティは`qemu.gles=0`を指定している。
-- Android 6の[EGL Loader.cpp](https://android.googlesource.com/platform/frameworks/native/+/android-6.0.1_r1/opengl/libs/EGL/Loader.cpp)は`ro.kernel.qemu=1`かつ`ro.kernel.qemu.gles=0`なら`/system/lib/egl/libGLES_android.so`を固定で選択する。
-- この[libaglのEGL設定](https://android.googlesource.com/platform/frameworks/native/+/android-6.0.1_r1/opengl/libagl/egl.cpp)は`EGL_RENDERABLE_TYPE = EGL_OPENGL_ES_BIT`であり、GLES 2用の`EGL_OPENGL_ES2_BIT`を提供していない。Loaderは取得できないGL関数を`gl_unimplemented`へ置き換える。このため「called unimplemented OpenGL ES API」と整合する。
-- 提供されたログではChromiumのEGL config探索とGLSurface初期化が失敗し、続いてGpuThreadがCHECK失敗でSIGABRTしている。これはiOS上のMetalビューの表示サイズや色変換ではなく、ゲストに必要なGL実装がないことが主因と判断できる。
-- `Display/MetalDisplay.mm`（表示処理）とGoldfish `display.c`はCPUフレームバッファを表示する経路であり、ゲストのGLES命令やEGLContextを実行していない。Metalで画面を表示できることはゲストのGLES 2対応を意味しない。
+旧実装は`qemu.gles=0`を指定し、GPU pipeもなかった。[Android 6 EGL Loader](https://android.googlesource.com/platform/frameworks/native/+/android-6.0.1_r1/opengl/libs/EGL/Loader.cpp)はこの場合`libGLES_android.so`を選ぶ。[そのEGL設定](https://android.googlesource.com/platform/frameworks/native/+/android-6.0.1_r1/opengl/libagl/egl.cpp)はGLES1の`EGL_OPENGL_ES_BIT`だけを提供するため、GLES2を必要とするChromiumのconfig探索・GLSurface初期化が失敗する。CPUフレームバッファをMetalで表示するだけではゲストのGLES2実装にならない。
 
-## 既存Android Emulatorとの比較
+## 追加した描画経路
 
-[AOSP Android 6 HostConnection.cpp](https://android.googlesource.com/device/generic/goldfish/+/android-6.0.1_r1/opengl/system/OpenglSystemCommon/HostConnection.cpp)は、通常QemuPipeStreamでホストに接続し、GLES 1・GLES 2・renderControlのencoderを利用する。現在の`pipe.c`はboot-properties、ADB、gsm、pingpongを実装しているが、このGPU経路を実装していない。
+`guest EGL / GLES → pipe:opengles → socketpair → EmuGL GLES1/GLES2/renderControl decoder → ANGLE EGL/GLES → Metal`
 
-参照用に取得済みのAOSP QEMU `android/opengles.c`は、`libOpenglRender`をロードし、renderer初期化・post callback・GPU pipeの登録を行う。元の[EmuGL FrameBuffer.cpp](https://android.googlesource.com/platform/external/qemu/+/e6aef36e024c3265ff8103f8d2265dd235851ef4/distrib/android-emugl/host/libs/libOpenglRender/FrameBuffer.cpp)は実際のEGLDisplay・EGLContextとGLES dispatchを必要とする。これらは現在の最小iOSエンジンの依存関係に含まれていない。
+`gralloc color buffer → EGLImage / pbuffer blit → readback → BGRA変更行 → QEMU display → MetalDisplay`
 
-`qemu.gles=1`だけを設定すると、存在しないホストrendererへの接続を選択することになり、正常な描画経路にならない。Browserの起動引数やHWUIの一括無効化でも、不足したGLES 2実装を補うことはできない。今回そのようなフラグ変更・成功応答の偽装は実施していない。
+- AOSP EmuGLの既存context・surface・color buffer・EGLImage管理を利用。出典と変更点は[UPSTREAM.md](../ThirdParty/EmuGL/UPSTREAM.md)に記載。
+- 先頭clientFlagsと分割された命令、部分読み書き、バックプレッシャー、複数接続に対応。QEMUのfd通知を使用し、GPUの1 msポーリングは撤去。
+- FrameBufferのblitterをデスクトップ窓なしで初期化。GLESシェーダーのvarying精度を一致させ、gralloc色バッファの上下反転を一度だけ適用。
+- 共有資源はFrameBufferのロックで保護。応答書き込み中に全接続のロックを保持しないため、停止したアプリが他の描画接続を止めない。
+- 起動時に実EGL/GLES2 contextとEGLImage対応を確認してからカーネル引数・boot-propertiesに`qemu.gles=1`を設定。iOSビルドではバックエンド初期化失敗をエラーとして扱う。
+- ANGLEの実装はGLES1をフロントエンドで提供する。Linuxテスト用MesaでGLES1 contextを生成できなかった場合は、使えないGLES1 configを非公開にしてGLES2を検証する。Linuxテスト成功はiOS上のGLES1成功の証明ではない。
+- ゲストに伝えるGLバージョンとGLES2拡張を、旧Goldfishプロトコルが扱える範囲に制限。GLES3・Vulkan・ARM64対応を意味しない。
 
-## 根本修正に必要な実装
+## 低メモリ端末向け
 
-1. Android 4〜6のGLES 1 / GLES 2 / renderControlプロトコルと互換なホストdecoderを組み込む。分割パケット、同期応答、複数ゲストプロセス・スレッドの接続を扱う。
-2. iOSで実際に動くEGL/GLES backendに接続し、context・surface・texture・color buffer・EGLImage・共有context・同期の寿命を管理する。既存desktop EmuGLのライブラリを単純にiOSへコピーするだけでは成立しない。
-3. grallocによるbuffer登録・更新・読み戻しと画面postを接続し、CPUフレームバッファ経路との整合を取る。
-4. backendの実初期化とGLES 2 configの確認が成功したときのみGPU対応をゲストへ通知する。
-5. API23の実イメージ上でEGL初期化、GLES2のshader compile/link、描画・readback、texture/FBO/EGLImage、複数context・複数アプリ、Browserと独立WebViewアプリを検証する。
+RAM 3 GB以下の端末は、TCGキャッシュ最大128 MiB・ゲストRAM最大640 MiB。画面幅は既定360 px。GPU投稿の同じ行は再変換せず、同一画面なら転送せず、変更行だけをQEMU・Metalへ渡す。大きなアップロード後は受信バッファを64 KiBへ縮小し、大きな応答バッファも保持し続けない。フレームは最新状態へ集約し、無制限の描画キューを作らない。
 
-本環境にはiOS SDKおよび検証用Androidシステムイメージがなく、このrendererの実装・統合・実機検証は完了していない。UI変更・ダウンロード対策の完了と、GPU修正の完了は別である。
+## 検証
+
+`Tests/GPUTests.cpp`は実EGLバックエンドと実デコーダーを使い、以下を検証する。
+
+- 分割ハンドシェイク・命令・応答、読み取りが停止した接続からの分離
+- GLES2 config/context/pbuffer、頂点・フラグメントshaderのcompile/link、VBOでの実描画、ピクセルreadback
+- gralloc色バッファのflush/post、BGRA色順・上下方向
+- 同じ画面では転送0回、1ピクセル変更では変更した1行だけの転送
+- 複数接続・共有contextでのprogram共有と資源解放
+
+ASan/UBSanでも描画テストを実行。Mesaのプロセス寿命キャッシュはリーク検査から除外。さらにGPU付きQEMUで14件のMMIO・TCG・pipe回帰テストを実行した。
+
+残る実機確認は、iOS 17/18/26の署名ビルド、Android 4〜6各SDKイメージ、Browser・独立WebViewアプリ・GLES1/2アプリ、バックグラウンド復帰、iPad 9でのFPSとピークメモリ。これらの結果を未測定の速度や互換性の保証に置き換えない。

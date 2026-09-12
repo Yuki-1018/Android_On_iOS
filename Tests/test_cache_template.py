@@ -77,3 +77,28 @@ class CacheTemplateTests(unittest.TestCase):
             result = subprocess.run([str(importer), str(template), str(image)], capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(image.read_bytes(), before)
+
+    def test_same_source_imports_have_independent_writable_disks(self):
+        importer = Path(os.environ.get('ANDROID51_IMAGE_COPY', ROOT / 'build/native/image_copy'))
+        if not importer.is_file():
+            self.skipTest('Build the native image_copy target first')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = cache.create(root / 'source.sparse')
+            original = source.read_bytes()
+            for disk in ('userdata.img', 'cache.img'):
+                outputs = [root / profile / disk for profile in ('profile-a', 'profile-b')]
+                for output in outputs:
+                    output.parent.mkdir(exist_ok=True)
+                    subprocess.run([str(importer), str(source), str(output)], check=True)
+                self.assertNotEqual(outputs[0].stat().st_ino, outputs[1].stat().st_ino)
+                with outputs[1].open('rb') as other:
+                    other.seek(8192)
+                    before = other.read(32)
+                with outputs[0].open('r+b') as changed:
+                    changed.seek(8192)
+                    changed.write(bytes(b ^ 0xff for b in before))
+                with outputs[1].open('rb') as other:
+                    other.seek(8192)
+                    self.assertEqual(other.read(32), before)
+                self.assertEqual(source.read_bytes(), original)

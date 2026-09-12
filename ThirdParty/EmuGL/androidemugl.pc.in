@@ -1,0 +1,8 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+Name: androidemugl
+Description: Android goldfish GLES 1/2 and renderControl renderer
+Version: 1.0
+Libs: -L${libdir} @AE_GPU_LIBS@
+Cflags: -I${includedir} -DAE_HAS_EMUGL=1

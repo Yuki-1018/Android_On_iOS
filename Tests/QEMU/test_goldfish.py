@@ -397,6 +397,27 @@ class GoldfishTests(unittest.TestCase):
         self.assertEqual(self.pipe(4, payload=b'A' * 1024), 0xfffffffc)
         self.assertEqual(self.pipe(2), 0)
 
+    @unittest.skipUnless(os.environ.get('ANDROID51_TEST_GPU') == '1', 'GPU-enabled QEMU build required')
+    def test_gpu_pipe_fragmented_handshake_and_response(self):
+        self.assertEqual(self.pipe(1), 0)
+        name = b'pipe:opengles\0'
+        self.assertEqual(self.pipe(4, payload=name), len(name))
+        payload = struct.pack('<III', 0, 10000, 8)  # client flags, rcGetRendererVersion
+        for fragment in (payload[:1], payload[1:7], payload[7:]):
+            self.assertEqual(self.pipe(4, payload=fragment), len(fragment))
+        self.assertEqual(self.pipe(7), 0)
+        deadline = time.monotonic() + 5
+        channel = self.read(0xff070008)
+        while channel == 0:
+            self.assertLess(time.monotonic(), deadline, 'GPU readiness interrupt timeout')
+            time.sleep(0.001)
+            channel = self.read(0xff070008)
+        self.assertEqual(channel, 1)
+        self.assertEqual(self.read(0xff070014) & 2, 2)
+        self.assertEqual(self.pipe(6, size=4), 4)
+        self.assertEqual(self.get(0x8000, 4), struct.pack('<I', 1))
+        self.assertEqual(self.pipe(2), 0)
+
     def test_pipe_boot_properties_partial_frames_and_wakeup(self):
         self.assertEqual(self.pipe(1), 0)
         invite = b'pipe:qemud:boot-properties\0'
@@ -413,7 +434,7 @@ class GoldfishTests(unittest.TestCase):
             length = int(response[:4], 16)
             properties.append(response[4:4 + length])
             response = response[4 + length:]
-        self.assertIn(b'qemu.gles=0', properties)
+        self.assertIn(b'qemu.gles=1' if os.environ.get('ANDROID51_TEST_GPU') == '1' else b'qemu.gles=0', properties)
         self.assertEqual(properties[-1], b'\0')
         self.assertEqual(self.pipe(6, size=1), 0xfffffffe)
         self.assertEqual(self.pipe(2), 0)

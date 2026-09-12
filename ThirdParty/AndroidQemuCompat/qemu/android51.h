@@ -21,6 +21,7 @@ struct Android51State {
     MachineState parent_obj;
     ARMCPU *cpu;
     uint32_t width, height;
+    bool gpu_ready;
     struct arm_boot_info boot;
     MemoryRegion pic_io, bus_io, tty_io, timer_io, rtc_io;
     qemu_irq *irqs;

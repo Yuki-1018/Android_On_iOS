@@ -111,12 +111,12 @@ import SwiftUI
             catch { errorMessage = error.localizedDescription }
         }
     }
-    func download(_ entry: ImageCatalog.Entry) {
+    func download(_ entry: ImageCatalog.Entry, name: String = "") {
         guard !importing else { return }
         guard profiles.count < 100 else { errorMessage = "プロファイルは最大100件です。"; return }
         errorMessage = nil
         importing = true; downloading = true; transferProgress = nil; transferStatus = "ダウンロードを開始中"
-        let profile = AndroidProfile(id: UUID(), name: entry.name, legacy: false)
+        let profile = AndroidProfile(id: UUID(), name: Self.importName(name, fallback: entry.name), legacy: false)
         downloadTask = Task {
             defer { importing = false; downloading = false; downloadTask = nil; transferStatus = ""; transferProgress = nil }
             var committed = false
@@ -143,12 +143,17 @@ import SwiftUI
             catch { errorMessage = error.localizedDescription }
         }
     }
+    private static func importName(_ name: String, fallback: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String((trimmed.isEmpty ? (fallback.isEmpty ? "Android" : fallback) : trimmed).prefix(80))
+    }
     func cancelDownload() { transferStatus = "キャンセル処理中"; downloadTask?.cancel() }
-    func importNewImage(_ url: URL) {
+    func importNewImage(_ url: URL, name: String = "") {
         guard !importing else { return }
         guard profiles.count < 100 else { errorMessage = "プロファイルは最大100件です。"; return }
         importing = true
-        let name = String(url.lastPathComponent.prefix(80))
+        errorMessage = nil
+        let name = Self.importName(name, fallback: url.lastPathComponent)
         let profile = AndroidProfile(id: UUID(), name: name.isEmpty ? "Android" : name, legacy: false)
         Task {
             defer { importing = false }

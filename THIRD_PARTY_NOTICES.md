@@ -20,7 +20,7 @@ The patches adapt UTM QEMU's TCG region allocator to external RW/RX mappings, di
 
 ## UTM dependency build machinery
 
-`scripts/prepare_ios_sysroot.py` specializes the build script at UTM revision `b6f7475be54f9cb542c46b131319454b83489ced`. The generated script retains its ISC notice (Angelo Haller, 2014), source URLs and applicable upstream patches. Only libffi, libiconv, gettext, GLib (and its wrap dependencies), pixman, libslirp and libucontext are selected. UTM UI, SPICE, Vulkan, Hypervisor and guest images are not built by this specialization. Per-dependency licenses are copied into the app; actual prepared engine/dependency sources and scripts accompany the IPA in a separate source artifact. These components retain their upstream licenses.
+`scripts/prepare_ios_sysroot.py` specializes the build script at UTM revision `b6f7475be54f9cb542c46b131319454b83489ced`. The generated script retains its ISC notice (Angelo Haller, 2014), source URLs and applicable upstream patches. Only libffi, libiconv, gettext, GLib (and its wrap dependencies), pixman, libslirp libucontext and the pinned WebKit ANGLE EGL/GLES implementation are selected. UTM UI, SPICE, Vulkan, Hypervisor and guest images are not built by this specialization. Per-dependency licenses are copied into the app; actual prepared engine/dependency sources and scripts accompany the IPA in a separate source artifact. These components retain their upstream licenses.
 
 The ADB accept/start protocol was checked against AOSP `android/adb-qemud.c` at the pinned AOSP revision. The new bounded in-process transport and classic ADB client are project code under the root GPL-2.0-or-later license. No ADB server executable is bundled.
 
@@ -36,3 +36,9 @@ UTM (Apache-2.0 application), UTM QEMU (GPL and per-file licenses), AOSP libspar
 The root GPL text is the standard GNU GPL version 2 text also distributed as QEMU's COPYING. The engine packaging scripts include corresponding source/build inputs for the actual revision and modifications; a URL to a moving upstream branch is not a substitute.
 
 Android OS/kernel images, proprietary Google software and user APKs are not included in this repository or its intended artifacts.
+
+## AOSP EmuGL and ANGLE
+
+`ThirdParty/EmuGL/upstream` embeds the GLES1/GLES2/renderControl decoders and framebuffer implementation from AOSP external/qemu commit `e6aef36e024c3265ff8103f8d2265dd235851ef4`, directory `distrib/android-emugl`. Original file notices remain; Apache-2.0 text is in `ThirdParty/EmuGL/LICENSE-APACHE-2.0`. Adaptations and source URLs are recorded in `ThirdParty/EmuGL/UPSTREAM.md`.
+
+The iOS EGL/GLES backend is ANGLE from UTM WebKit commit `ed78ab6e1a37f4f11583a0bd038f22ec91f3ff10`. ANGLE and its component licenses retain their original terms. The build includes those sources in the corresponding-source artifact and copies dependency license texts into the app. The desktop EmuGL GL translators, native windows and TCP server are not built into the iOS renderer.

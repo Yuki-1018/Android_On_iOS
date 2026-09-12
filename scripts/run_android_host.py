@@ -73,7 +73,7 @@ def arguments(folder, ram=640, cache=192, qmp=None):
             '-display', 'none', '-serial', 'stdio', '-monitor', 'none',
             '-audiodev', 'none,id=audio', '-nic', 'user,model=smc91c111,ipv6=off',
             '-kernel', str(kernel), '-initrd', str(folder / 'ramdisk.img'),
-            '-append', 'qemu=1 console=ttyS0 androidboot.console=ttyS0 androidboot.hardware=goldfish qemu.gles=0 android.qemud=1']
+            '-append', 'qemu=1 console=ttyS0 androidboot.console=ttyS0 androidboot.hardware=goldfish android.qemud=1']
     for path in files[2:]:
         name = path.stem
         args.extend(['-drive', f'if=none,id={name},format=raw,file={qemu_option_path(path)},readonly={"on" if name == "system" else "off"}'])

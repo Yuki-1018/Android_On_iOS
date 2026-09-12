@@ -94,7 +94,7 @@ systemはread-only、userdata/cacheは書き込み可能です。作業用コピ
 ## 実装上の制約
 
 - 元のGoldfish boardにSMP起動経路がないため1 vCPUです。2 vCPU/MTTCGを動作確認した機能として表示しません。
-- 描画はguest software renderer + Metal framebufferです。ANGLE/GLES command streamのGPU加速は未実装です。
+- GLES 1/2・renderControlのホスト経路を実装し、iOSではANGLE Metalへ接続します。CPUフレームバッファは起動初期の表示に使います。実iOS端末とAndroid Browser/WebViewでの検証はまだ必要です。
 - 実guestのkernel/ramdisk互換性、Launcher、音声、DHCP/DNS、APKインストールはまだ確認できていません。
 - ADBはアプリ内transportです。初回はAndroid側のUSBデバッグ許可が必要な場合があります。APKは512 MiBまで、shell出力とserialログは有界です。
 - 性能表示は実カウンタです。未測定のinput-to-photonや架空のFPSは表示しません。
@@ -119,7 +119,7 @@ ZIPには、通常のフォルダ取り込みと同じ`source.properties`・ARMv
 
 ADBの認証／通常応答待ちは120秒、APKインストールの応答待ちは600秒です。バックグラウンドの起動確認はadbd不在時にキューを占有しません。APK転送はclassic ADBのパケット内にsyncヘッダーを含め、余分な往復を削減しています。連続する転送で遅れて届くclose応答を処理し、具体的なエラーを表示します。一時停止中はADB画面からAndroidを再開してください。初回のUSBデバッグ許可はAndroid側で承認が必要です。
 
-Android 6のBrowser / WebViewのGpuThread停止は、現在のGLES 1ソフトウェア描画にGLES 2用のEGL configがないことと整合します。ホストGPU転送・レンダラーが未実装のため、根本修正はまだ完了していません。[調査結果](docs/GLES_ROOT_CAUSE.md)を参照してください。停止直後に「APK・ADB」→「アプリ停止の診断を取得（Android 6）」からログを取得・共有できます。WebView・EGL・空きメモリ・マウント状態・Java/nativeクラッシュを切り分けるための情報を取得します。今回の変更でこれらのアプリ停止が解消したとは未確認です。
+Android 6のBrowser / WebViewが必要とするGLES 2用EGL configを提供するため、Goldfishの`opengles`パイプ、AOSP EmuGLデコーダー、iOS向けANGLE Metal、gralloc表示転送を接続しました。レンダラーの実初期化後にGPU対応を通知します。Browser固有の起動オプションによる回避は使用しません。Linux上では実GLES2のシェーダー描画・読み戻し・gralloc転送・複数コンテキストとQEMU MMIOを検証済みですが、iOSビルドと実Androidアプリの起動確認は未完了です。[実装と検証範囲](docs/GLES_ROOT_CAUSE.md)を参照してください。
 
 ## ライブラリUIと通信の回復
 
@@ -128,3 +128,9 @@ UTMの一覧・詳細の構成を参考に、Androidごとの一覧行と詳細�
 ダウンロードは一時的なネットワーク障害とHTTP 408/429/500/502/503/504に最大3回再試行します。Retry-Afterがある場合はその待ち時間を尊重し、60秒を超える場合は自動再試行せずエラーを表示します。URLSessionが再開データを返した場合は途中再開を試みます（サーバーのRange・ETag/Last-Modified対応が必要で、最初からの取得になる場合もあります）。再開情報は実行中のメモリ内だけに保持し、アプリ終了後の再開には未対応です。
 
 接続待ち・再試行・進捗・空き容量不足を表示します。キャンセル、証明書エラー、404、展開・検証失敗は自動で繰り返しません。Swiftの再試行・途中再開情報の受け渡し・上限・空ライブラリのテストを追加しましたが、このLinux環境ではSwiftUI/iOSビルドとSwiftテストを実行できていません。
+
+### RAM 3 GB端末向けの描画・メモリ制御
+
+RAM 3 GB以下ではTCGキャッシュを最大128 MiB、ゲストRAMを最大640 MiBへ制限します。任意のIncreased Memory Limit資格でもこの物理RAM制限を優先します。既定の画面幅360 pxを維持し、GPUの同一画面転送を省略、変更行のみコピー・Metalアップロードします。GPU通信はfd通知で起こし、一定間隔のGPUポーリングを行いません。クライアントごとの待ちを分離し、大容量転送後の一時バッファを縮小します。実iPad 9でのFPS・ピーク使用量は未測定です。
+
+ホスト側の実描画テストは `cmake -S ThirdParty/EmuGL -B build/emugl-host -DEMUGL_TESTS=ON`、ビルド後 `ctest --test-dir build/emugl-host --output-on-failure` で実行できます。LinuxではEGL/GLESとMesaのソフトウェアレンダラーが必要です。GPU付きホストQEMUは `ANDROID51_GPU=1 QEMU_BUILD_DIR=build/qemu-gpu bash scripts/build_qemu_host.sh` でビルドします。

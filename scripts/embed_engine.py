@@ -27,6 +27,8 @@ def embed(app):
     notices.mkdir(exist_ok=True)
     for name in ['LICENSE', 'TCG-MIT.txt', 'LGPL-2.1.txt']:
         shutil.copy2(ROOT / 'ThirdParty/AndroidQemuCompat' / name, notices / name)
+    shutil.copy2(ROOT / 'ThirdParty/EmuGL/LICENSE-APACHE-2.0', notices / 'EmuGL-APACHE-2.0.txt')
+    shutil.copy2(ROOT / 'ThirdParty/EmuGL/UPSTREAM.md', notices / 'EmuGL-UPSTREAM.md')
     # Include all installed dependency license texts and exact input revisions.
     shutil.copy2(ROOT / 'ThirdParty/dependencies.lock.json', notices)
     shutil.copy2(source / 'engine-manifest.json', notices)

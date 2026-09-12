@@ -17,12 +17,14 @@
 #include "android51.h"
 #include "adb.h"
 #include "gsm.h"
+#include "gpu.h"
+#include "qemu/main-loop.h"
 #include "system/reset.h"
 #include "qemu/bswap.h"
 
 #define GF_PIPE_LIMIT 64
 #define GF_PIPE_BYTES 8192
-typedef enum GFService { GF_CONNECT, GF_BOOT_PROPERTIES, GF_PINGPONG, GF_GSM, GF_ADB_ACCEPT, GF_ADB_START, GF_ADB_DATA, GF_CLOSED } GFService;
+typedef enum GFService { GF_CONNECT, GF_GPU, GF_BOOT_PROPERTIES, GF_PINGPONG, GF_GSM, GF_ADB_ACCEPT, GF_ADB_START, GF_ADB_DATA, GF_CLOSED } GFService;
 typedef struct GFPipe {
     bool used;
     uint32_t channel, wanted, wakes;
@@ -30,6 +32,9 @@ typedef struct GFPipe {
     uint8_t incoming[GF_PIPE_BYTES], outgoing[GF_PIPE_BYTES];
     unsigned received, queued;
     GFGSM gsm;
+    void *gpu;
+    unsigned gpu_watch_mask;
+    struct GFPipes *owner;
 } GFPipe;
 typedef struct GFPipes {
     Android51State *board;
@@ -41,9 +46,32 @@ typedef struct GFPipes {
     QEMUTimer *adb_timer;
     GFPipe *adb;
 } GFPipes;
+static void pipe_wake(GFPipes *s, GFPipe *p);
+static void gpu_ready(void *opaque)
+{
+    GFPipe *p = opaque;
+    pipe_wake(p->owner, p);
+}
+static void gpu_watch(GFPipe *p)
+{
+    int fd = ae_gpu_fd(p->gpu);
+    if (fd < 0) { return; }
+    unsigned mask = p->service == GF_GPU ? p->wanted & 6 : 0;
+    if (mask == p->gpu_watch_mask) { return; }
+    p->gpu_watch_mask = mask;
+    qemu_set_fd_handler(fd, mask & 2 ? gpu_ready : NULL,
+                        mask & 4 ? gpu_ready : NULL, p);
+}
+static void gpu_close(GFPipe *p)
+{
+    int fd = ae_gpu_fd(p->gpu);
+    if (fd >= 0) { qemu_set_fd_handler(fd, NULL, NULL, NULL); }
+    ae_gpu_close(p->gpu); p->gpu = NULL;
+}
 static bool pipe_writable(GFPipe *p)
 {
     if (p->service == GF_CLOSED) { return false; }
+    if (p->service == GF_GPU) { return (ae_gpu_poll(p->gpu) & 2) != 0; }
     if (p->service == GF_ADB_DATA) { return gf_adb_guest_writable() != 0; }
     if (p->service == GF_GSM) { return GF_PIPE_BYTES - p->queued >= 1024; }
     return p->queued < GF_PIPE_BYTES;
@@ -56,10 +84,18 @@ static void pipes_irq(GFPipes *s)
 }
 static void pipe_wake(GFPipes *s, GFPipe *p)
 {
-    uint32_t ready = (p->queued ? 2 : 0) | (pipe_writable(p) ? 4 : 0);
+    uint32_t ready;
+    if (p->service == GF_GPU) {
+        unsigned poll = ae_gpu_poll(p->gpu);
+        ready = (poll & 1 ? 2 : 0) | (poll & 2 ? 4 : 0);
+        if (poll & 4) { ready |= 1; p->service = GF_CLOSED; }
+    } else {
+        ready = (p->queued ? 2 : 0) | (pipe_writable(p) ? 4 : 0);
+    }
     if (p->service == GF_CLOSED) { ready |= 1; }
     p->wakes |= (ready & p->wanted) | (ready & 1);
     p->wanted &= ~p->wakes;
+    gpu_watch(p);
     pipes_irq(s);
 }
 static GFPipe *pipe_find(GFPipes *s)
@@ -83,7 +119,7 @@ static bool boot_properties(GFPipes *s, GFPipe *p)
 {
     static const char *properties[] = {
         "qemu.sf.lcd_density=160", "qemu.hw.mainkeys=0", "qemu.sf.fake_camera=none",
-        "qemu.gles=0",
+
     };
     while (p->received >= 4) {
         unsigned length = 0;
@@ -100,6 +136,8 @@ static bool boot_properties(GFPipes *s, GFPipe *p)
         for (unsigned i = 0; i < ARRAY_SIZE(properties); ++i) {
             if (!framed_reply(p, properties[i], strlen(properties[i]))) { return false; }
         }
+        const char *gles = s->board->gpu_ready ? "qemu.gles=1" : "qemu.gles=0";
+        if (!framed_reply(p, gles, strlen(gles))) { return false; }
         char dimension[64];
         snprintf(dimension, sizeof(dimension), "qemu.sf.lcd_width=%u", s->board->width);
         if (!framed_reply(p, dimension, strlen(dimension))) { return false; }
@@ -128,12 +166,22 @@ static int32_t pipe_send(GFPipes *s, GFPipe *p)
                           !strcmp((char *)p->incoming, "pipe:qemud:adb:5555")) && !s->adb) {
                     p->service = GF_ADB_ACCEPT; s->adb = p;
                 }
+                else if (!strcmp((char *)p->incoming, "pipe:opengles") && s->board->gpu_ready) {
+                    p->gpu = ae_gpu_open();
+                    if (!p->gpu) { p->service = GF_CLOSED; return -4; }
+                    p->service = GF_GPU;
+                }
                 else if (!strcmp((char *)p->incoming, "pipe:pingpong")) { p->service = GF_PINGPONG; }
                 else { p->service = GF_CLOSED; return -1; }
                 p->received = 0;
                 break;
             }
         }
+    }
+    if (p->service == GF_GPU) {
+        if (offset == s->length) { return offset; }
+        int n = ae_gpu_send(p->gpu, buffer + offset, s->length - offset);
+        return n >= 0 ? offset + n : (offset ? (int32_t)offset : n);
     }
     if (p->service == GF_GSM) {
         while (offset < s->length) {
@@ -195,20 +243,32 @@ static void pipe_command(GFPipes *s, uint32_t command)
         for (unsigned i = 0; i < GF_PIPE_LIMIT; ++i) {
             if (!s->pipes[i].used) {
                 p = &s->pipes[i];
-                memset(p, 0, sizeof(*p)); p->used = true; p->channel = s->channel;
+                memset(p, 0, sizeof(*p)); p->used = true; p->channel = s->channel; p->owner = s;
                 s->result = 0; return;
             }
         }
         s->result = -3; return;
     }
     if (!p) { return; }
-    if (command == 2) { if (s->adb == p) { gf_adb_connect(false); s->adb = NULL; } memset(p, 0, sizeof(*p)); s->result = 0; pipes_irq(s); return; }
+    if (command == 2) { gpu_close(p); if (s->adb == p) { gf_adb_connect(false); s->adb = NULL; } memset(p, 0, sizeof(*p)); s->result = 0; pipes_irq(s); return; }
     if (p->service == GF_CLOSED) { s->result = -4; return; }
     switch (command) {
-    case 3: s->result = (p->queued ? 1 : 0) | (pipe_writable(p) ? 2 : 0); break;
+    case 3:
+        s->result = p->service == GF_GPU ? (int32_t)ae_gpu_poll(p->gpu) :
+                    (p->queued ? 1 : 0) | (pipe_writable(p) ? 2 : 0);
+        break;
     case 4: s->result = pipe_send(s, p); break;
     case 5: p->wanted |= 4; s->result = 0; break;
     case 6: {
+        if (p->service == GF_GPU) {
+            uint8_t data[GF_PIPE_BYTES];
+            unsigned count = MIN(s->length, sizeof(data));
+            /* Validate guest destination before consuming the response stream. */
+            if (!gf_guest_virtual(s->board, s->address, data, count, false)) { break; }
+            int n = ae_gpu_receive(p->gpu, data, count);
+            if (n > 0 && !gf_guest_virtual(s->board, s->address, data, n, true)) { s->result = -4; break; }
+            s->result = n; break;
+        }
         unsigned count = MIN(s->length, p->queued);
         if (!count) { s->result = s->length ? -2 : 0; break; }
         if (!gf_guest_virtual(s->board, s->address, p->outgoing, count, true)) { break; }
@@ -286,6 +346,7 @@ static void pipes_reset(void *opaque)
 {
     GFPipes *s = opaque;
     gf_adb_connect(false); s->adb = NULL;
+    for (unsigned i = 0; i < GF_PIPE_LIMIT; ++i) { gpu_close(&s->pipes[i]); }
     memset(s->pipes, 0, sizeof(s->pipes));
     s->channel = s->address = s->length = s->wakes = s->result = 0;
     s->params = 0; pipes_irq(s);

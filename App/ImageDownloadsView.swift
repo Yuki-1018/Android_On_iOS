@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ImageDownloadsView: View {
     @ObservedObject var model: LibraryModel
+    var profileName: String = ""
     @State private var entries: [ImageCatalog.Entry] = []
     @State private var loading = false
     @State private var error: String?
@@ -42,7 +43,7 @@ struct ImageDownloadsView: View {
         .navigationTitle("イメージをダウンロード")
         .task { await refresh() }
         .confirmationDialog(selection?.name ?? "ダウンロード", isPresented: Binding(get: { selection != nil }, set: { if !$0 { selection = nil } }), titleVisibility: .visible) {
-            if let entry = selection { Button("新しいプロファイルへダウンロード") { model.download(entry); selection = nil } }
+            if let entry = selection { Button("このAndroidを追加") { model.download(entry, name: profileName); selection = nil } }
         } message: { Text("利用権限のあるイメージを選んでください。Wi-Fi接続と十分なストレージ空き容量を推奨します。") }
     }
     private func refresh() async {

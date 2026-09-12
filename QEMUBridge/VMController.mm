@@ -122,7 +122,7 @@ static std::string optionPath(NSString *path) {
         _statusText = @"非対応の画面幅です"; return NO;
     }
     // The stock Goldfish 3.4 kernel has a 760 MiB lowmem ceiling.
-    ram = MIN(ram, 760U);
+    ram = MIN(ram, NSProcessInfo.processInfo.physicalMemory <= (3ULL << 30) ? 640U : 760U);
     // Use the arena actually prepared (possibly enlarged by the optional
     // entitlement), rather than the user's pre-preparation preference.
     cache = (uint32_t)((AEJITArenaSize() + (1U << 20) - 1) >> 20);
@@ -192,7 +192,7 @@ static std::string optionPath(NSString *path) {
         "-audiodev", "none,id=audio", "-nic", emu::guestNICOption(),
         "-kernel", [path stringByAppendingPathComponent:@"kernel"].UTF8String,
         "-initrd", [path stringByAppendingPathComponent:@"ramdisk.img"].UTF8String,
-        "-append", "qemu=1 console=ttyS0 androidboot.console=ttyS0 androidboot.hardware=goldfish qemu.gles=0 android.qemud=1"};
+        "-append", "qemu=1 console=ttyS0 androidboot.console=ttyS0 androidboot.hardware=goldfish android.qemud=1"};
     for (NSString *name in disks) {
         args.emplace_back("-drive");
         args.push_back("if=none,id=" + std::string(name.UTF8String) + ",format=raw,file=" +

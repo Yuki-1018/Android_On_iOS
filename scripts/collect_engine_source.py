@@ -21,7 +21,7 @@ if __name__ == '__main__':
     output = ROOT / 'build/artifacts/AndroidEmu-engine-source.tar.gz'
     output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output, 'w:gz') as archive:
-        for relative in ['ThirdParty/checkouts/qemu', 'ThirdParty/checkouts/UTM', 'ThirdParty/AndroidQemuCompat',
+        for relative in ['ThirdParty/checkouts/qemu', 'ThirdParty/checkouts/UTM', 'ThirdParty/AndroidQemuCompat', 'ThirdParty/EmuGL',
                          'ThirdParty/dependencies.lock.json', 'scripts', 'build/ios-dependencies/build-minimal.sh',
                          'build/ios-dependencies/build-iOS-arm64']:
             path = ROOT / relative

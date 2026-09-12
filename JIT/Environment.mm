@@ -52,7 +52,7 @@ bool AEHasGetTaskAllow(void) { return hasEntitlement(CFSTR("get-task-allow")); }
 bool AEHasIncreasedMemoryLimit(void) { return hasEntitlement(CFSTR("com.apple.developer.kernel.increased-memory-limit")); }
 uint64_t AEAvailableMemory(void) { return os_proc_available_memory(); }
 uint32_t AERecommendedCacheMiB(uint32_t requested) {
-    return emu::tcgCacheMiB(requested, AEHasIncreasedMemoryLimit(), AEAvailableMemory());
+    return emu::tcgCacheMiB(requested, AEHasIncreasedMemoryLimit(), AEAvailableMemory(), NSProcessInfo.processInfo.physicalMemory);
 }
 bool AEIsDebugged(void) {
     auto csops = symbol<int (*)(pid_t, unsigned int, void*, size_t)>(RTLD_DEFAULT, "csops");

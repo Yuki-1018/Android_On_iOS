@@ -14,6 +14,7 @@
  */
 #include "qemu/osdep.h"
 #include "android51.h"
+#include "gpu.h"
 #include "qemu/units.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
@@ -76,6 +77,13 @@ static void android51_init(MachineState *machine)
     gf_register(s, "smc91x", 0, 0xff020000, 0x1000, 10, 1);
     smc91c111_init(0xff020000, s->irqs[10]);
     gf_nand_init(s);
+    s->gpu_ready = ae_gpu_init(s->width, s->height);
+#ifdef AE_HAS_EMUGL
+    if (!s->gpu_ready) {
+        error_report("Android GLES renderer initialization failed; EGL/GLES2/EGLImage are required");
+        exit(1);
+    }
+#endif
     gf_display_init(s);
     gf_events_init(s);
     gf_battery_init(s);
@@ -84,6 +92,10 @@ static void android51_init(MachineState *machine)
     s->boot.ram_size = machine->ram_size;
     s->boot.loader_start = 0;
     s->boot.board_id = 1441;
+    /* init derives ro.kernel.qemu.gles from the kernel command line before EGL loads. */
+    char *cmdline = g_strdup_printf("%s qemu.gles=%d", machine->kernel_cmdline ? machine->kernel_cmdline : "", s->gpu_ready ? 1 : 0);
+    g_free(machine->kernel_cmdline);
+    machine->kernel_cmdline = cmdline;
     arm_load_kernel(s->cpu, machine, &s->boot);
 }
 

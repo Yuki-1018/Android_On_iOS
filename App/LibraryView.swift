@@ -5,6 +5,7 @@ struct LibraryView: View {
     @ObservedObject var model: LibraryModel
     @ObservedObject var jit: JITCoordinator
     @StateObject private var runtime = RuntimeModel()
+    @State private var showCreation = false
     @State private var chooseImage = false
     @State private var importAsNew = true
     @State private var showDownloads = false
@@ -50,10 +51,7 @@ struct LibraryView: View {
                     Button("設定", systemImage: "gearshape") { showSettings = true }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("Androidをダウンロード", systemImage: "arrow.down.circle") { showDownloads = true }
-                        Button("フォルダから読み込む", systemImage: "folder") { importAsNew = true; chooseImage = true }
-                    } label: { Label("Androidを追加", systemImage: "plus") }.disabled(locked)
+                    Button("Androidを追加", systemImage: "plus") { showCreation = true }.disabled(locked)
                 }
             }
             .navigationSplitViewColumnWidth(min: 260, ideal: 320)
@@ -102,7 +100,13 @@ struct LibraryView: View {
                 ContentUnavailableView("Androidを選択", systemImage: "apps.iphone", description: Text("ライブラリから選ぶか、＋から追加してください。"))
             }
         }
-        .safeAreaInset(edge: .bottom) { if model.importing { transfer } }
+        .overlay {
+            if model.importing && !showDownloads && !showCreation {
+                Color.black.opacity(0.2).ignoresSafeArea()
+                transfer.padding(24)
+            }
+        }
+        .sheet(isPresented: $showCreation) { AndroidCreationView(model: model) }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 LibrarySettingsView(model: model, jit: jit, running: runtime.controller.started)
@@ -145,13 +149,20 @@ struct LibraryView: View {
         } }
     }
     private var transfer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ProgressView(value: model.downloading ? model.transferProgress : nil) {
-                Text(model.downloading ? model.transferStatus : "イメージを取り込み中…")
-            }
+        VStack(spacing: 18) {
+            Image(systemName: "square.and.arrow.down").font(.largeTitle).foregroundStyle(.tint)
+            Text(model.downloading ? "Androidをダウンロード中" : "Androidを準備しています").font(.headline)
+            ProgressView(value: model.downloading ? model.transferProgress : nil)
+            Text(model.downloading ? model.transferStatus : "イメージをコピー・確認しています。サイズによって数分かかります。")
+                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text("この画面を開いたままお待ちください。保存データはAndroidごとに分けて保存されます。")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             if model.downloading { Button("キャンセル", role: .cancel) { model.cancelDownload() } }
-        }.font(.footnote).padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
+        }.padding(28).frame(maxWidth: 380)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.15), radius: 24, y: 8)
     }
+
     private func subtitle(_ profile: AndroidProfile) -> String {
         if let image = model.profileImages[profile.id] { return ImageProfile.label(for: image.profile) }
         return model.profileIssues[profile.id] == nil ? "イメージ未設定" : "イメージの確認が必要です"
@@ -169,7 +180,7 @@ struct LibraryView: View {
         }
     }
 }
-private struct ImageDirectoryPicker: UIViewControllerRepresentable {
+struct ImageDirectoryPicker: UIViewControllerRepresentable {
     var selected: (URL) -> Void
     @Environment(\.dismiss) private var dismiss
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -186,5 +197,59 @@ private struct ImageDirectoryPicker: UIViewControllerRepresentable {
             if let url = urls.first { parent.selected(url) }; parent.dismiss()
         }
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { parent.dismiss() }
+    }
+}
+
+private struct AndroidCreationView: View {
+    @ObservedObject var model: LibraryModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var chooseFolder = false
+    @State private var selectedFolder: URL?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("例：ゲーム用、Android 6", text: $name)
+                        .submitLabel(.done)
+                } header: { Text("1. 名前を付ける") }
+                footer: { Text("あとから変更できます。空欄の場合はイメージの名前を使います。") }
+                Section {
+                    NavigationLink {
+                        ImageDownloadsView(model: model, profileName: name)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("ダウンロードから選ぶ")
+                                Text("公開されているAndroidの一覧を表示").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "arrow.down.circle") }
+                    }
+                    Button { chooseFolder = true } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("自分のイメージを読み込む")
+                                Text("展開済みのイメージフォルダを選択").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "folder") }
+                    }
+                } header: { Text("2. Androidを選ぶ") }
+                footer: {
+                    Text("同じイメージを何度選んでも、アプリ・設定・保存データはそれぞれ独立します。元のフォルダは変更されません。")
+                }
+            }
+            .navigationTitle("Androidを追加")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
+            .sheet(isPresented: $chooseFolder, onDismiss: {
+                if let url = selectedFolder {
+                    selectedFolder = nil
+                    model.importNewImage(url, name: name)
+                }
+            }) {
+                ImageDirectoryPicker { selectedFolder = $0 }
+            }
+            .onChange(of: model.importing) { _, importing in if importing { dismiss() } }
+        }
     }
 }
