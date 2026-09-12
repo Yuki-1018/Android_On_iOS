@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 bool AEImportImage(const char *source, const char *destination, uint64_t limit, char *error, size_t errorCapacity);
+bool AEExtractImageZip(const char *source, const char *destination, char *error, size_t errorCapacity, bool (*cancelled)(void));
 bool AEHasGetTaskAllow(void);
 bool AEHasIncreasedMemoryLimit(void);
 uint64_t AEAvailableMemory(void);

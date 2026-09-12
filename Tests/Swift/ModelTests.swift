@@ -2,6 +2,44 @@ import XCTest
 @testable import AndroidEmuModels
 
 final class ModelTests: XCTestCase {
+    func testProfileCatalogMigrationAndRemoval() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = root.appendingPathComponent("Android51")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        try Data("legacy".utf8).write(to: old.appendingPathComponent("image.json"))
+        let store = ProfileStore(root: root)
+        let original = try await store.load()
+        XCTAssertEqual(original.count, 1)
+        XCTAssertTrue(original[0].legacy)
+        let extra = AndroidProfile(id: UUID(), name: "Android 6", legacy: false)
+        try await store.save(original + [extra])
+        let reopened = try await ProfileStore(root: root).load()
+        XCTAssertEqual(reopened, original + [extra])
+        try FileManager.default.createDirectory(at: extra.directory(in: root), withIntermediateDirectories: true)
+        try Data("new".utf8).write(to: extra.directory(in: root).appendingPathComponent("userdata.img"))
+        try await store.remove(extra, remaining: original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: extra.directory(in: root).path))
+        XCTAssertEqual(try Data(contentsOf: old.appendingPathComponent("image.json")), Data("legacy".utf8))
+    }
+    func testIndependentProfileDirectoriesAndLegacyData() throws {
+        let first = AndroidProfile(id: UUID(), name: "Android 5.1", legacy: false)
+        let second = AndroidProfile(id: UUID(), name: "Android 6", legacy: false)
+        XCTAssertNotEqual(first.directory, second.directory)
+        var renamed = first; renamed.name = "../../test"
+        XCTAssertEqual(first.directory, renamed.directory)
+        let legacy = AndroidProfile(id: UUID(), name: "旧データ", legacy: true)
+        XCTAssertEqual(legacy.directory.lastPathComponent, "Android51")
+        XCTAssertEqual(try JSONDecoder().decode(AndroidProfile.self, from: JSONEncoder().encode(first)), first)
+    }
+    func testDownloadCatalog() throws {
+        let valid = Data(#"{"images":[{"name":"Android 6.0","url":"https://example.com/android6.zip"}]}"#.utf8)
+        XCTAssertEqual(try ImageCatalog.decode(valid).first?.name, "Android 6.0")
+        let unsafe = Data(#"{"images":[{"name":"Bad","url":"file:///tmp/image.zip"}]}"#.utf8)
+        XCTAssertThrowsError(try ImageCatalog.decode(unsafe))
+        XCTAssertThrowsError(try ImageCatalog.decode(Data("not json".utf8)))
+        XCTAssertThrowsError(try ImageCatalog.decode(Data(#"{"images":[{"name":"Bad","url":"http://example.com/a.zip"}]}"#.utf8)))
+    }
     func testStikDebugURL() throws {
         let url = try JITRequest.url(bundleID: "org.example.test", pid: 123, txm: .present, sptm: .present)
         let parts = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))

@@ -106,3 +106,17 @@ systemはread-only、userdata/cacheは書き込み可能です。作業用コピ
 StikDebugから直接起動・復帰した場合も、デバッガによるJIT許可を自動監視し、領域準備と自己テストを行います。「Enable with StikDebug」は削除しました。通常のAndroid起動ボタンからのStikDebug連携は維持しています。iOS17/18ではlegacy経路、iOS26以降ではTXM/SPTM検出に応じたuniversal経路を使用します。最低OSをアプリ・core・QEMU・依存frameworkすべて17.0へ統一し、17.0より新しいOSを要求するframeworkはパッケージ時に拒否します。ビルドには引き続きXcode26 SDKが必要です。この変更の実機検証は未完了です。
 
 イメージ受付はAPI14/15/16/17/18/19/21/22/23のARMv7 Goldfishへ拡大しました。defaultイメージが対象で、古いAPI18以前はタグ省略も許可します。Google APIs、Wear、x86、arm64、Ranchu、YAFFS2/F2FSは対象外です。ext4形式を読み取りで検査し、不適合なイメージを上書き変換しません。ユーザーから起動確認が得られているのはAndroid5.1.1であり、4系・6系の互換性は検証中です。
+
+## プロファイルとイメージのダウンロード
+
+ライブラリでプロファイルを追加・切替・名前変更・削除できます。イメージとuserdata/cacheは`Application Support/Profiles/<UUID>/`で分離します。従来の`Android51/`は移動せず「これまでのAndroid」として登録し、保存済みデータを引き継ぎます。削除には確認が必要です。QEMUはプロセスあたり1回起動のため、Androidを実行した後に別プロファイルを起動するにはiOSアプリを終了して開き直してください。
+
+「Androidイメージをダウンロード」は`https://api.yuki-0604.f5.si/images.json`の`{"images":[{"name":"Android 6.0","url":"https://example.com/android6.zip"}]}`形式を読みます。HTTPSのみ対応し、一覧取得失敗時は再試行または従来のフォルダ取り込みを選べます。実サーバーからのダウンロードは未検証です。
+
+ZIPには、通常のフォルダ取り込みと同じ`source.properties`・ARMv7 Goldfishの`kernel-qemu`（または`kernel`）・`ramdisk.img`・`system.img`・`userdata.img`を1組含めてください。サブフォルダ内でも構いません。`cache.img`は任意です。stored/deflate形式、ZIP全体4 GiB未満、展開後合計16 GiB以下に対応します。ZIP64中央ディレクトリ・暗号化ZIP・リンクは非対応です。ZIPのCRCと既存のイメージ検証に成功してから、新しいプロファイルを公開します。既存プロファイルをダウンロードで上書きしません。展開と取り込みで追加の空き容量が必要です。
+
+## ADBとAndroid 6のアプリ停止
+
+ADBの認証／通常応答待ちは120秒、APKインストールの応答待ちは600秒です。バックグラウンドの起動確認はadbd不在時にキューを占有しません。APK転送はclassic ADBのパケット内にsyncヘッダーを含め、余分な往復を削減しています。連続する転送で遅れて届くclose応答を処理し、具体的なエラーを表示します。一時停止中はADB画面からAndroidを再開してください。初回のUSBデバッグ許可はAndroid側で承認が必要です。
+
+Android 6のブラウザ・ランチャー停止の原因は未特定です。停止直後に「APK・ADB」→「アプリ停止の診断を取得（Android 6）」からログを取得・共有できます。WebView・EGL・空きメモリ・マウント状態・Java/nativeクラッシュを切り分けるための情報を取得します。今回の変更でこれらのアプリ停止が解消したとは未確認です。

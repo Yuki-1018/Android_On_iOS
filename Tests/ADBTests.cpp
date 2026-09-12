@@ -14,7 +14,7 @@ uint32_t get(const std::vector<uint8_t>& b,size_t at) { return uint32_t(b[at])|u
 struct Guest {
     std::deque<uint8_t> rx;
     std::vector<uint8_t> tx, sync, file;
-    bool syncing=false, cancel=false;
+    bool syncing=false, cancel=false, staleCloseOnWrite=false;
     uint32_t local=0;
     unsigned signatures=0, publicKeys=0;
     void reply(Packet p) { auto data=encode(p); rx.insert(rx.end(),data.begin(),data.end()); }
@@ -29,6 +29,7 @@ struct Guest {
             if (!syncing) { reply({WRTE,99,local,{'h','e','l','l','o','\n'}}); reply({CLSE,99,local,{}}); }
         } else if (p.command==WRTE) {
             check(syncing && p.arg0==local && p.arg1==99);
+            if (staleCloseOnWrite) { reply({CLSE,99,local-1,{}}); staleCloseOnWrite=false; }
             reply({OKAY,99,local,{}}); sync.insert(sync.end(),p.payload.begin(),p.payload.end());
             while (sync.size()>=8) {
                 auto cmd=get(sync,0), length=get(sync,4);
@@ -41,6 +42,10 @@ struct Guest {
                 else check(cmd==command('S','E','N','D'));
                 sync.erase(sync.begin(),sync.begin()+8+length);
             }
+        } else if (p.command==CLSE && syncing) {
+            // Delayed close from the completed sync stream can arrive after
+            // the next OPEN. It must not poison the next transfer.
+            reply({CLSE,99,p.arg0,{}}); syncing=false;
         } else check(p.command==OKAY || p.command==CLSE);
     }
     Transport transport() {
@@ -66,7 +71,14 @@ int main() {
         uint64_t progress=0;
         try { client.push(name,"/data/local/tmp/test.apk",[&](uint64_t n,uint64_t total){check(n>=progress && total==apk.size());progress=n;}); }
         catch (...) { unlink(name.c_str()); throw; }
-        unlink(name.c_str()); check(guest.file==apk && progress==apk.size());
+        check(guest.file==apk && progress==apk.size());
+        check(client.shell("echo after push")=="hello\n");
+        guest.file.clear();
+        guest.staleCloseOnWrite=true;
+        client.push(name,"/data/local/tmp/second.apk");
+        check(guest.file==apk);
+        check(client.shell("echo after second push")=="hello\n");
+        unlink(name.c_str());
         guest.cancel=true; bool cancelled=false;
         try { client.shell("echo blocked"); } catch (const std::exception&) {cancelled=true;} check(cancelled);
         std::array<uint8_t,256> modulus; modulus.fill(255);

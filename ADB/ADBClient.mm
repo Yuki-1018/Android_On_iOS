@@ -38,7 +38,7 @@
 - (NSString *)outputText { return _outputText; }
 - (void)connect {
     if (!_connected || !_disconnect || !_read || !_write) throw std::runtime_error("ADB transport ABI is unavailable");
-    auto end=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    auto end=std::chrono::steady_clock::now()+std::chrono::seconds(120);
     while (!_connected()) {
         if (_cancelled.load()) throw std::runtime_error("ADB cancelled");
         if (std::chrono::steady_clock::now()>=end) throw std::runtime_error("adbd is not ready; check Android boot log");
@@ -74,14 +74,16 @@
             try { [self connect]; output=action(); }
             catch (const std::exception& e) { success=NO; self->_client.reset(); if (self->_disconnect) self->_disconnect(); output=@(e.what()); }
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (publishOutput) self->_outputText=output ?: @"";
+                if (publishOutput || !success) self->_outputText=output ?: @"";
                 self->_busy=NO;
-                self->_statusText=success ? @"ADB接続済み" : @"ADB処理に失敗しました";
+                self->_statusText=success ? @"ADB接続済み" : [@"ADB: " stringByAppendingString:output ?: @"接続失敗"];
             });
         }
     });
 }
 - (void)checkBoot {
+    // Background polling must not monopolize the queue while adbd is absent.
+    if (!_connected || !_connected()) return;
     [self perform:@"Androidの起動を確認中" publishOutput:NO action:^NSString *{
         auto output=self->_client->shell("getprop sys.boot_completed",4096);
         NSString *text=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding] ?: @"";
@@ -110,12 +112,15 @@
                     *last=sent; double progress=double(sent)/double(total);
                     dispatch_async(dispatch_get_main_queue(), ^{ self->_transferProgress=progress; });
                 });
-                output=self->_client->shell(emu::adb::installCommand(name.UTF8String,true)+"; printf '\\n__ANDROIDEMU_EXIT_%d\\n' $?");
+                output=self->_client->shell(emu::adb::installCommand(name.UTF8String,true)+"; printf '\\n__ANDROIDEMU_EXIT_%d\\n' $?", 1024 * 1024, std::chrono::seconds(600));
             } catch (...) {
-                try { self->_client->shell("rm -f "+emu::adb::shellQuote(destination),4096); } catch (...) {}
+                try { self->_client->shell("rm -f "+emu::adb::shellQuote(destination),4096, std::chrono::seconds(20)); } catch (...) {}
                 throw;
             }
-            self->_client->shell("rm -f "+emu::adb::shellQuote(destination),4096);
+            // Installation result is authoritative. A temporary-file cleanup
+            // failure must not report a successfully installed APK as failed.
+            try { self->_client->shell("rm -f "+emu::adb::shellQuote(destination),4096, std::chrono::seconds(20)); }
+            catch (...) { self->_client.reset(); if (self->_disconnect) self->_disconnect(); }
             if (output.find("__ANDROIDEMU_EXIT_0")==std::string::npos) throw std::runtime_error(output);
             return [[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding] ?: @"インストールが完了しました";
         } @finally { if (scoped) [url stopAccessingSecurityScopedResource]; }

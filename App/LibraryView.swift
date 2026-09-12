@@ -7,12 +7,28 @@ struct LibraryView: View {
     @State private var chooseImage = false
     @State private var launchWhenReady = false
     @State private var confirmReplace = false
+    @State private var editProfile = false
+    @State private var createProfile = false
+    @State private var profileName = ""
+    @State private var confirmDeleteProfile = false
     @State private var showRuntime = false
     @StateObject private var runtime = RuntimeModel()
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         NavigationStack {
             List {
+                Section("プロファイル") {
+                    Picker("使用するAndroid", selection: Binding(get: { model.selectedID }, set: { if let id = $0 { model.select(id) } })) {
+                        ForEach(model.profiles) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    HStack {
+                        Button("追加") { createProfile = true; profileName = ""; editProfile = true }
+                        Button("名前変更") { createProfile = false; profileName = model.selectedProfile?.name ?? ""; editProfile = true }
+                        Button("削除", role: .destructive) { confirmDeleteProfile = true }.disabled(model.profiles.count <= 1)
+                    }.buttonStyle(.borderless)
+                    Text("Androidのバージョン・アプリ・保存データをプロファイルごとに分けます。実行後に別のAndroidを起動するにはiOSアプリを開き直してください。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }.disabled(model.importing || runtime.controller.started || runtime.preparing || jit.state == .preparing)
                 Section {
                     Label(model.manifest.map { ImageProfile.label(for: $0.profile) } ?? "Android 4〜6", systemImage: "apps.iphone")
                         .font(.title2.bold())
@@ -24,7 +40,10 @@ struct LibraryView: View {
                     } else { Text("Androidイメージは同梱されていません。") }
                     Button(model.manifest == nil ? "Add Android" : "イメージを置き換える") { if model.manifest != nil { confirmReplace = true } else { chooseImage = true } }
                         .disabled(model.importing || jit.state == .preparing || runtime.controller.started || runtime.preparing)
-                    if model.importing { ProgressView("コピー・変換・SHA-256検証中…") }
+                    NavigationLink("Androidイメージをダウンロード") { ImageDownloadsView(model: model) }
+                        .disabled(model.importing || runtime.controller.started || runtime.preparing || jit.state == .preparing)
+                    if model.importing { ProgressView(model.downloading ? model.transferStatus : "コピー・変換・SHA-256検証中…") }
+                    if model.downloading { Button("ダウンロードをキャンセル", role: .cancel) { model.cancelDownload() } }
                 } footer: {
                     Text("合法的に利用可能なAndroid 4〜6のdefault / armeabi-v7a / Goldfish / ext4イメージのフォルダを選択してください。source.propertiesが必要です。データは端末内に保存されます。起動確認済みは5.1.1で、4系・6系は互換性検証中です。")
                 }
@@ -79,6 +98,14 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("AndroidEmu")
+            .alert(createProfile ? "プロファイルを追加" : "名前を変更", isPresented: $editProfile) {
+                TextField("名前", text: $profileName)
+                Button("保存") { model.saveProfile(name: profileName, creating: createProfile) }
+                Button("キャンセル", role: .cancel) {}
+            }
+            .confirmationDialog("このプロファイルのAndroid・アプリ・保存データを削除します。元に戻せません。", isPresented: $confirmDeleteProfile, titleVisibility: .visible) {
+                Button("削除", role: .destructive) { model.deleteProfile() }
+            }
             .fullScreenCover(isPresented: $showRuntime) { RuntimeView(runtime: runtime) }
             .sheet(isPresented: $chooseImage) { ImageDirectoryPicker { model.importImage($0) } }
             .task { await model.load(); jit.refresh(); jit.observe(cache: model.configuration.cache) }
@@ -102,7 +129,8 @@ struct LibraryView: View {
     }
     private func launch() {
         Task {
-            if await runtime.start(configuration: model.configuration) { showRuntime = true }
+            guard let profile = model.selectedProfile else { return }
+            if await runtime.start(configuration: model.configuration, directory: profile.directory) { showRuntime = true }
             else { model.errorMessage = runtime.status }
         }
     }

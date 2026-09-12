@@ -14,15 +14,13 @@ import Combine
     private var startedAt: Date?
     @Published private(set) var elapsedSeconds = 0
     @Published private(set) var preparing = false
-    func start(configuration: VMConfiguration) async -> Bool {
+    func start(configuration: VMConfiguration, directory root: URL) async -> Bool {
         guard !preparing else { return false }
         preparing = true
         defer { preparing = false }
         status = "cache領域を準備中"
-        do { try await ImageStore().ensureCache() }
+        do { try await ImageStore(root: root).ensureCache() }
         catch { status = error.localizedDescription; return false }
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Android51", isDirectory: true)
         let success = controller.start(imageDirectory: root.path,
             ramMiB: UInt32(configuration.ram.rawValue), cacheMiB: UInt32(configuration.cache.rawValue), panelWidth: UInt32(configuration.resolution.width))
         status = controller.statusText
@@ -139,7 +137,7 @@ struct RuntimeView: View {
                     DisclosureGroup("詳細ツール・診断") {
                         Text(network.description)
                         if let adb = runtime.controller.adb {
-                            NavigationLink("APK・ADB") { ADBToolsView(client: adb) }
+                            NavigationLink("APK・ADB") { ADBToolsView(client: adb, paused: runtime.paused, resume: { runtime.pause(false) }) }
                         }
                         Button("シリアルログ") { menu = false; log = true }
                         Text("停止すると、次回の起動にはアプリを開き直す必要があります。")

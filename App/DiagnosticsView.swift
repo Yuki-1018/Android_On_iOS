@@ -8,6 +8,7 @@ struct DiagnosticsView: View {
         AndroidEmu development build
         Host: \(ProcessInfo.processInfo.operatingSystemVersionString)
         Profile: \(model.manifest?.profile ?? "未選択")
+        Profile name: \(model.selectedProfile?.name ?? "未選択")
         Guest RAM: \(model.configuration.ram.rawValue) MiB
         vCPU: \(model.configuration.cpuCount)
         TCG cache requested: \(model.configuration.cache.rawValue) MiB

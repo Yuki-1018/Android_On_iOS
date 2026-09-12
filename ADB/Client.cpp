@@ -12,7 +12,7 @@ namespace {
 constexpr auto CNXN = command('C','N','X','N'), AUTH = command('A','U','T','H');
 constexpr auto OPEN = command('O','P','E','N'), OKAY = command('O','K','A','Y');
 constexpr auto WRTE = command('W','R','T','E'), CLSE = command('C','L','S','E');
-auto deadline() { return std::chrono::steady_clock::now() + std::chrono::seconds(30); }
+auto deadline(std::chrono::seconds timeout = std::chrono::seconds(120)) { return std::chrono::steady_clock::now() + timeout; }
 void checkDeadline(const Transport& io, std::chrono::steady_clock::time_point end) {
     if (io.cancelled()) throw std::runtime_error("ADB operation cancelled");
     if (!io.connected()) throw std::runtime_error("Android ADB transport disconnected");
@@ -66,7 +66,7 @@ void Client::open(const std::string& service) {
     if (service.size() >= limit_ || service.find('\0') != std::string::npos) throw std::invalid_argument("Invalid ADB service");
     local_ = next_++; if (!local_) local_ = next_++;
     remote_ = 0; buffered_.clear(); closed_ = false;
-    auto end = deadline(); send({OPEN,local_,0,text(service)},end);
+    auto end = deadline(timeout_); send({OPEN,local_,0,text(service)},end);
     while (true) {
         auto p=receive(end);
         if (p.arg1 != local_ && p.command == CLSE) continue;
@@ -82,10 +82,11 @@ void Client::acceptData(const Packet& p) {
 }
 void Client::write(std::span<const uint8_t> data) {
     while (!data.empty()) {
-        auto end=deadline(); auto part=data.first(std::min<size_t>(data.size(),limit_));
+        auto end=deadline(timeout_); auto part=data.first(std::min<size_t>(data.size(),limit_));
         send({WRTE,local_,remote_,{part.begin(),part.end()}},end);
         while (true) {
             auto p=receive(end);
+            if (p.command==CLSE && p.arg1!=local_) continue;
             if (p.command==WRTE) { acceptData(p); continue; }
             if (p.command==OKAY && p.arg0==remote_ && p.arg1==local_) break;
             throw std::runtime_error("ADB stream closed during write");
@@ -96,7 +97,7 @@ void Client::write(std::span<const uint8_t> data) {
 std::vector<uint8_t> Client::read() {
     if (!buffered_.empty()) { auto b=std::move(buffered_); buffered_.clear(); return b; }
     if (closed_) return {};
-    auto end=deadline();
+    auto end=deadline(timeout_);
     while (true) {
         auto p=receive(end);
         if (p.command==CLSE && p.arg1!=local_) continue;
@@ -105,8 +106,9 @@ std::vector<uint8_t> Client::read() {
         throw std::runtime_error("Unexpected ADB stream packet");
     }
 }
-void Client::close() { if (!closed_) { send({CLSE,local_,remote_,{}},deadline()); closed_=true; } }
-std::string Client::shell(const std::string& commandText, size_t limit) {
+void Client::close() { if (!closed_) { closed_=true; send({CLSE,local_,remote_,{}},deadline()); } }
+std::string Client::shell(const std::string& commandText, size_t limit, std::chrono::seconds timeout) {
+    timeout_ = timeout;
     open("shell:"+commandText); std::string output;
     try {
         while (!closed_) {
@@ -119,6 +121,7 @@ std::string Client::shell(const std::string& commandText, size_t limit) {
 }
 void Client::push(const std::filesystem::path& source, const std::string& destination,
                   const std::function<void(uint64_t,uint64_t)>& progress) {
+    timeout_ = std::chrono::seconds(120);
     if (destination.empty() || destination.size()>1024 || destination.find('\0')!=std::string::npos) throw std::invalid_argument("Invalid sync destination");
     struct File { int fd; ~File() { if (fd >= 0) ::close(fd); } } file{::open(source.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK)};
     struct stat info{};
@@ -129,7 +132,9 @@ void Client::push(const std::filesystem::path& source, const std::string& destin
     try {
         auto path=destination+",33188"; std::vector<uint8_t> request;
         put32(request,command('S','E','N','D')); put32(request,uint32_t(path.size())); request.insert(request.end(),path.begin(),path.end()); write(request);
-        std::array<uint8_t,4096> block; uint64_t sent=0;
+        // Fit each sync DATA header and data into one classic ADB packet.
+        // 4096 data bytes used to require two stop-and-wait round trips.
+        std::array<uint8_t,4088> block; uint64_t sent=0;
         while (sent<size) {
             size_t count=std::min<uint64_t>(block.size(),size-sent);
             size_t received=0;
