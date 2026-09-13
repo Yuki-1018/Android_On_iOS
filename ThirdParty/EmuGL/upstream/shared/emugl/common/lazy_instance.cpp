@@ -26,30 +26,22 @@ namespace internal {
 
 typedef LazyInstanceState::AtomicType AtomicType;
 
-#if defined(__GNUC__)
-static inline void compilerBarrier() {
-    __asm__ __volatile__ ("" : : : "memory");
-}
-#else
-#error "Your compiler is not supported"
-#endif
-
-#if defined(__i386__) || defined(__x86_64__)
-#  define acquireBarrier() compilerBarrier()
-#  define releaseBarrier() compilerBarrier()
-#else
-#  error "Your CPU is not supported"
-#endif
-
+// Acquire/release must synchronize the constructed object's contents on ARM,
+// where compiler-only barriers do not order CPU loads and stores.
 static inline AtomicType loadAcquire(AtomicType volatile* ptr) {
-    AtomicType ret = *ptr;
-    acquireBarrier();
-    return ret;
+#ifdef _WIN32
+    return InterlockedCompareExchange(ptr, 0, 0);
+#else
+    return __atomic_load_n(ptr, __ATOMIC_ACQUIRE);
+#endif
 }
 
 static inline void storeRelease(AtomicType volatile* ptr, AtomicType value) {
-    releaseBarrier();
-    *ptr = value;
+#ifdef _WIN32
+    InterlockedExchange(ptr, value);
+#else
+    __atomic_store_n(ptr, value, __ATOMIC_RELEASE);
+#endif
 }
 
 static int atomicCompareAndSwap(AtomicType volatile* ptr,
@@ -78,7 +70,7 @@ bool LazyInstanceState::inInitState() {
 
 bool LazyInstanceState::needConstruction() {
     AtomicType state = loadAcquire(&mState);
-    if (mState == STATE_DONE)
+    if (state == STATE_DONE)
         return false;
 
     state = atomicCompareAndSwap(&mState, STATE_INIT, STATE_CONSTRUCTING);

@@ -82,3 +82,33 @@ class AngleCMakeDiscoveryTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('ANGLE_LIBRARY must name an existing', result.stderr)
+
+
+class LazyInstanceTests(unittest.TestCase):
+    def test_concurrent_construction_and_publication(self):
+        import subprocess
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            executable = str(Path(directory) / 'lazy-test')
+            subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++11', '-O2', '-pthread',
+                            '-I' + str(ROOT / 'ThirdParty/EmuGL/upstream/shared'),
+                            str(ROOT / 'Tests/LazyInstanceTests.cpp'),
+                            str(ROOT / 'ThirdParty/EmuGL/upstream/shared/emugl/common/lazy_instance.cpp'),
+                            '-o', executable], check=True, capture_output=True)
+            subprocess.run([executable], check=True, timeout=30)
+
+
+class DependencyCacheTests(unittest.TestCase):
+    def test_toolchain_and_build_input_changes_invalidate_cache(self):
+        spec = importlib.util.spec_from_file_location('dependency_key', ROOT / 'scripts/ios_dependency_key.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        key = module.fingerprint(ROOT, 'Xcode A')
+        self.assertEqual(key, module.fingerprint(ROOT, 'Xcode A'))
+        self.assertNotEqual(key, module.fingerprint(ROOT, 'Xcode B'))
+        original = Path.read_bytes
+        def changed(path):
+            data = original(path)
+            return data + b'new patch' if path.name == 'prepare_angle.py' else data
+        with patch.object(Path, 'read_bytes', changed):
+            self.assertNotEqual(key, module.fingerprint(ROOT, 'Xcode A'))

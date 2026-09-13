@@ -72,11 +72,38 @@ jobs:
           python3 -m venv build/tools-venv
           build/tools-venv/bin/pip install setuptools six pyparsing pyyaml distlib mako
           echo "$PWD/build/tools-venv/bin" >> "$GITHUB_PATH"
+      - name: Compute iOS dependency cache key
+        id: dependency-key
+        run: echo "key=$(python3 scripts/ios_dependency_key.py)" >> "$GITHUB_OUTPUT"
+      - name: Restore compiled iOS dependencies and corresponding sources
+        id: dependencies-cache
+        uses: actions/cache/restore@v4
+        with:
+          key: ios-dependencies-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.dependency-key.outputs.key }}
+          path: |
+            build/ios-dependencies/sysroot-iOS-arm64
+            build/ios-dependencies/dependency-key
+            build/ios-dependencies/build-iOS-arm64
+            !build/ios-dependencies/build-iOS-arm64/**/.git
+            !build/ios-dependencies/build-iOS-arm64/**/utm_build
+            !build/ios-dependencies/build-iOS-arm64/**/ANGLE.xcarchive
       - name: Compile arm64 iOS core and Goldfish engine
         shell: bash
         run: |
           set -o pipefail
           bash scripts/build_dependencies.sh 2>&1 | tee build-dependencies.log
+      - name: Save completed dependencies even if the engine compile failed
+        if: ${{ !cancelled() && steps.dependencies-cache.outputs.cache-hit != 'true' && hashFiles('build/ios-dependencies/dependency-key') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}
+          path: |
+            build/ios-dependencies/sysroot-iOS-arm64
+            build/ios-dependencies/dependency-key
+            build/ios-dependencies/build-iOS-arm64
+            !build/ios-dependencies/build-iOS-arm64/**/.git
+            !build/ios-dependencies/build-iOS-arm64/**/utm_build
+            !build/ios-dependencies/build-iOS-arm64/**/ANGLE.xcarchive
       - name: Build unsigned iPhoneOS application
         shell: bash
         run: |

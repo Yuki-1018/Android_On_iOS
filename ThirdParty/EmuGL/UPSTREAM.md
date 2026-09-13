@@ -10,6 +10,8 @@ The `upstream/` directory is a build-input subset derived from Android Open Sour
 
 AndroidEmu modifications:
 
+- Lazy singleton initialization uses acquire/release atomic accesses on ARM64 and x86, including the fast-path state check.
+
 - CMake build, native emugen for iOS cross-compilation, direct EGL/GLES dispatch to ANGLE Metal.
 - No desktop translator/window/server: bounded socketpairs connect the Goldfish pipe directly to per-client RenderThread instances.
 - FrameBuffer initializes its texture blitter without a desktop window and posts gralloc color buffers through a callback. Matching shader varying precision is required by real GLES backends.
