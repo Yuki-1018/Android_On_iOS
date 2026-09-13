@@ -8,7 +8,7 @@ This directory contains an ARMv7 Goldfish machine overlay for pinned UTM QEMU 10
 
 | Address / IRQ | Implementation |
 |---|---|
-| RAM at 0 | 128–1024 MiB, Cortex-A8, one CPU, ARM boot loader, machine ID 1441 |
+| RAM at 0 | 128–4080 MiB, Cortex-A8, one CPU, ARM boot loader, machine ID 1441; above 760 MiB requires a HIGHMEM kernel; top 16 MiB reserved for MMIO |
 | `ff000000` | Legacy PIC; pending register returns the lowest IRQ number |
 | `ff001000` / 1 | Platform enumeration, guest-virtual name transfer |
 | `ff002000` / 4 | Goldfish TTY, bounded receive queue, character and buffer I/O |

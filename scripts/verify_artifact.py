@@ -28,6 +28,15 @@ def verify(path):
             if '_CodeSignature' in parts:
                 raise ValueError('Signed app found in unsigned artifact')
         prefix = 'Payload/AndroidEmu.app/'
+        kernel_name = prefix + 'goldfish-highmem.zImage'
+        if kernel_name not in seen or not 48 <= archive.getinfo(kernel_name).file_size <= 64 * 1024 * 1024:
+            raise ValueError('Missing or invalid HIGHMEM kernel')
+        with archive.open(kernel_name) as kernel:
+            header = kernel.read(48)
+        if struct.unpack_from('<I', header, 36)[0] != 0x016f2818:
+            raise ValueError('Invalid ARM zImage header')
+        if prefix + 'goldfish-kernel-COPYING.txt' not in seen:
+            raise ValueError('Missing HIGHMEM kernel license')
         template_name = prefix + 'cache-template.sparse'
         if template_name not in seen:
             raise ValueError('Missing empty cache filesystem template')

@@ -60,7 +60,7 @@ GitHub Actionsにも同じ経路を追加しています。成功時の`AndroidE
 
 再署名では`Frameworks/`の全frameworkを先に署名し、最後にアプリへJIT用entitlementsを適用します。未署名IPA自体には有効なentitlementsはありません。
 
-Increased Memory Limitは任意です。対応するApp ID・プロビジョニングプロファイルで署名する場合だけ、同梱の`AndroidEmu-increased-memory.entitlements`をメインアプリに使用してください。通常は従来の`AndroidEmu.entitlements`を使用します。実際の署名資格と`os_proc_available_memory()`の余裕を確認し、TCGキャッシュを自動で384／512 MiBに増やします。AndroidのRAMはGoldfishカーネルの制約で最大760 MiBのままです。資格だけで全端末の利用可能メモリが増える保証はありません。[Appleの仕様](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.increased-memory-limit)
+Increased Memory Limitは任意です。対応するApp ID・プロビジョニングプロファイルで署名する場合だけ、同梱の`AndroidEmu-increased-memory.entitlements`をメインアプリに使用してください。通常は従来の`AndroidEmu.entitlements`を使用します。実際の署名資格と`os_proc_available_memory()`の余裕を確認し、TCGキャッシュを自動で384／512 MiBに増やします。AndroidのRAMは512〜4096 MiBを1 MiB単位で指定できます。760 MiBを超える場合は同梱のHIGHMEMカーネルを使い、32bit機器用領域を除いた実使用上限は4080 MiBです。資格だけで全端末の利用可能メモリが増える保証はありません。[Appleの仕様](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.kernel.increased-memory-limit)
 
 通信はSDK標準RIL向けの仮想データモデムからNATへ接続します。Android上では携帯データ接続として扱われますが、iPhoneのSIMを操作しません。ホストでのUDP往復は検証済みで、実機のDNS・Web閲覧は未検証です。Android 6取り込み時のメモリ圧迫対策として、SHA-256処理の一時データをチャンクごとに解放し、sparse空領域のCRC検証を高速化しています。実際のクラッシュログとの照合・解消確認はまだ必要です。
 
@@ -130,6 +130,6 @@ UTMの一覧・詳細の構成を参考に、Androidごとの一覧行と詳細�
 
 ### RAM 3 GB端末向けの描画・メモリ制御
 
-RAM 3 GB以下ではTCGキャッシュを最大128 MiB、ゲストRAMを最大640 MiBへ制限します。任意のIncreased Memory Limit資格でもこの物理RAM制限を優先します。既定の画面幅360 pxを維持し、GPUの同一画面転送を省略、変更行のみコピー・Metalアップロードします。GPU通信はfd通知で起こし、一定間隔のGPUポーリングを行いません。クライアントごとの待ちを分離し、大容量転送後の一時バッファを縮小します。実iPad 9でのFPS・ピーク使用量は未測定です。
+RAM 3 GB以下ではTCGキャッシュを最大128 MiBに制限します。ゲストRAMの既定値は640 MiBですが、手動設定値を自動で減らしません。起動時にホストの空きメモリ不足を確認した場合は容量を減らす案内を表示します。既定の画面幅360 pxを維持し、GPUの同一画面転送を省略、変更行のみコピー・Metalアップロードします。GPU通信はfd通知で起こし、一定間隔のGPUポーリングを行いません。クライアントごとの待ちを分離し、大容量転送後の一時バッファを縮小します。実iPad 9でのFPS・ピーク使用量は未測定です。
 
 ホスト側の実描画テストは `cmake -S ThirdParty/EmuGL -B build/emugl-host -DEMUGL_TESTS=ON`、ビルド後 `ctest --test-dir build/emugl-host --output-on-failure` で実行できます。LinuxではEGL/GLESとMesaのソフトウェアレンダラーが必要です。GPU付きホストQEMUは `ANDROID51_GPU=1 QEMU_BUILD_DIR=build/qemu-gpu bash scripts/build_qemu_host.sh` でビルドします。

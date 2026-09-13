@@ -32,7 +32,8 @@ def generate():
         obj(name, f'isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = System/Library/Frameworks/{name}.framework; sourceTree = SDKROOT;')
         obj('link:' + name, f'isa = PBXBuildFile; fileRef = {ident(name)};')
     resource_refs, resource_builds = [], []
-    for resource in ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ThirdParty/StikJITProtocol/MPL-2.0.txt']:
+    for resource in ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'ThirdParty/StikJITProtocol/MPL-2.0.txt',
+                     'build/guest-kernel/goldfish-highmem.zImage', 'build/guest-kernel/goldfish-kernel-COPYING.txt']:
         resource_refs.append(ident(resource)); resource_builds.append(ident('resource:' + resource))
         obj(resource, f'isa = PBXFileReference; lastKnownFileType = text; path = {quote(resource)}; sourceTree = SOURCE_ROOT;')
         obj('resource:' + resource, f'isa = PBXBuildFile; fileRef = {ident(resource)};')

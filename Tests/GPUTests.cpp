@@ -92,6 +92,8 @@ int main(int argc, char **argv) {
     auto surface=first.call(OP_rcCreateWindowSurface,{cfg,64,64},1)[0]; check(surface,"surface");
     auto color=first.call(OP_rcCreateColorBuffer,{64,64,0x1908},1)[0]; check(color,"color buffer");
     first.call(OP_rcSetWindowColorBuffer,{surface,color});
+    check(first.call(OP_rcFlushWindowColorBuffer,{surface},1)[0]==0xffffffffu,
+          "flush without a draw context propagates failure");
     check(first.call(OP_rcMakeCurrent,{ctx,surface,surface},1)[0]==1,"make current");
     auto vs=first.shader(0x8B31,"attribute vec4 p; void main(){gl_Position=p;}");
     auto fs=first.shader(0x8B30,"precision mediump float; void main(){gl_FragColor=vec4(1.,0.,0.,1.);}");
@@ -113,7 +115,23 @@ int main(int argc, char **argv) {
     check(pixel==0xff0000ff,"GLES2 readback red");
     first.call(OP_glEnable,{0x0C11}); first.call(OP_glScissor,{0,0,64,32});
     first.call(OP_glClearColor,{0,0,0x3f800000,0x3f800000}); first.call(OP_glClear,{0x4000}); first.call(OP_glDisable,{0x0C11});
+    // Swapping a window must copy its default framebuffer, even if HWUI left
+    // an offscreen layer FBO bound. EGL make-current does not reset GL state.
+    auto layer = first.call(OP_glGenFramebuffers,{1,4},1)[0];
+    auto storage = first.call(OP_glGenRenderbuffers,{1,4},1)[0];
+    first.call(OP_glBindFramebuffer,{0x8D40,layer});
+    first.call(OP_glBindRenderbuffer,{0x8D41,storage});
+    first.call(OP_glRenderbufferStorage,{0x8D41,0x8056,64,64});
+    first.call(OP_glFramebufferRenderbuffer,{0x8D40,0x8CE0,0x8D41,storage});
+    check(first.call(OP_glCheckFramebufferStatus,{0x8D40},1)[0]==0x8CD5,"layer FBO complete");
+    first.call(OP_glClearColor,{0,0x3f800000,0,0x3f800000});
+    first.call(OP_glClear,{0x4000});
     check(first.call(OP_rcFlushWindowColorBuffer,{surface},1)[0]==0,"gralloc flush");
+    check(first.call(OP_glGetIntegerv,{0x8CA6,4},1)[0]==layer,"swap preserves guest FBO binding");
+    check(first.call(OP_glReadPixels,{0,0,1,1,0x1908,0x1401,4},1)[0]==0xff00ff00,"swap preserves layer pixels");
+    first.call(OP_glBindFramebuffer,{0x8D40,0});
+    first.call(OP_glDeleteFramebuffers,{1,4,layer});
+    first.call(OP_glDeleteRenderbuffers,{1,4,storage});
     first.call(OP_rcFBPost,{color}); first.call(OP_glFinishRoundTrip,{},1);
     std::vector<uint8_t> frame(64*64*4);
     check(ae_gpu_frame(frame.data(),frame.size())==1,"headless post callback");

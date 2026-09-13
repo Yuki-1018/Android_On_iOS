@@ -36,6 +36,9 @@ struct ADBToolsView: View {
                 Button("アプリ停止の診断を取得（Android 6）") {
                     client.runShell("getprop ro.build.fingerprint; getprop ro.product.cpu.abi; getprop ro.opengles.version; getprop ro.hardware.egl; getprop init.svc.webview_zygote; cat /proc/meminfo; cat /proc/mounts; df; dumpsys webviewupdate; logcat -b crash -d -t 300; logcat -b main -b system -d -t 500")
                 }.disabled(busy)
+                Button("応答停止（ANR）の診断を取得") {
+                    client.runShell("echo '=== memory ==='; cat /proc/meminfo; echo '=== activity ==='; dumpsys activity lastanr; echo '=== thread traces ==='; head -n 400 /data/anr/traces.txt; echo '=== system log ==='; logcat -b system -b main -d -t 500")
+                }.disabled(busy)
                 Button("ADB接続を確認") { client.runShell("echo AndroidEmu_ADB_OK") }.disabled(busy)
             }.disabled(paused)
             Section("Android shell") {

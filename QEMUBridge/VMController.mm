@@ -117,14 +117,30 @@ static std::string optionPath(NSString *path) {
     NSAssert([NSThread isMainThread], @"Launch must originate on UI thread");
     if (_started) { _statusText = @"再起動にはアプリを終了して開き直してください"; return NO; }
     if (!AEJITArenaReady()) { _statusText = @"先にJITを有効にしてください"; return NO; }
-    if (!(ram == 512 || ram == 640 || ram == 768 || ram == 1024) || !(cache == 128 || cache == 192 || cache == 256)) {
+    if (ram < 512 || ram > 4096 || !(cache == 128 || cache == 192 || cache == 256)) {
         _statusText = @"非対応のメモリ設定です"; return NO;
     }
     if (!(width == 360 || width == 480 || width == 540 || width == 720)) {
         _statusText = @"非対応の画面幅です"; return NO;
     }
-    // The stock Goldfish 3.4 kernel has a 760 MiB lowmem ceiling.
-    ram = MIN(ram, NSProcessInfo.processInfo.physicalMemory <= (3ULL << 30) ? 640U : 760U);
+    // Keep the supplied kernel for ordinary configurations. The separately
+    // built HIGHMEM kernel is required above the stock kernel's lowmem limit.
+    ram = MIN(ram, 4080U); // ARMv7 Goldfish reserves its top 16 MiB for MMIO.
+    NSString *kernelPath = [path stringByAppendingPathComponent:@"kernel"];
+    if (ram > 760) {
+        kernelPath = [NSBundle.mainBundle pathForResource:@"goldfish-highmem" ofType:@"zImage"];
+        if (!kernelPath) {
+            _statusText = @"HIGHMEM対応カーネルが同梱されていません。最新版のIPAを使うか、メモリを760 MiB以下にしてください。";
+            return NO;
+        }
+    }
+    uint64_t available = AEAvailableMemory();
+    // Leave headroom for the renderer, disk I/O and UIKit. Never silently lower
+    // the requested memory and then report it as having been allocated.
+    if (available && ((uint64_t)ram + 256) * (1ULL << 20) > available) {
+        _statusText = @"指定したAndroidメモリと描画処理に必要な空きメモリが不足しています。設定でメモリ容量を減らしてください。";
+        return NO;
+    }
     // Use the arena actually prepared (possibly enlarged by the optional
     // entitlement), rather than the user's pre-preparation preference.
     cache = (uint32_t)((AEJITArenaSize() + (1U << 20) - 1) >> 20);
@@ -195,7 +211,7 @@ static std::string optionPath(NSString *path) {
         "-m", std::to_string(ram), "-smp", "1", "-accel", "tcg,tb-size=" + std::to_string(cache) + ",split-wx=on",
         "-nodefaults", "-no-reboot", "-display", "none", "-serial", "null", "-monitor", "none",
         "-audiodev", "none,id=audio", "-nic", emu::guestNICOption(),
-        "-kernel", [path stringByAppendingPathComponent:@"kernel"].UTF8String,
+        "-kernel", kernelPath.UTF8String,
         "-initrd", [path stringByAppendingPathComponent:@"ramdisk.img"].UTF8String,
         "-append", "qemu=1 console=ttyS0 androidboot.console=ttyS0 androidboot.hardware=goldfish android.qemud=1"};
     for (NSString *name in disks) {

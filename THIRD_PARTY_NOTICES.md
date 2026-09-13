@@ -35,7 +35,20 @@ UTM (Apache-2.0 application), UTM QEMU (GPL and per-file licenses), AOSP libspar
 
 The root GPL text is the standard GNU GPL version 2 text also distributed as QEMU's COPYING. The engine packaging scripts include corresponding source/build inputs for the actual revision and modifications; a URL to a moving upstream branch is not a substitute.
 
-Android OS/kernel images, proprietary Google software and user APKs are not included in this repository or its intended artifacts.
+Android system/userdata images, proprietary Google software and user APKs are not included in this repository or its intended artifacts.
+
+## AOSP Goldfish HIGHMEM kernel
+
+The app bundles Linux 3.4.67 from AOSP `kernel/goldfish` revision
+`880d9af358076df842377facd4b900f6bbecc783`, built with its
+`goldfish_armv7_defconfig` (`CONFIG_HIGHMEM=y`) and no source patches.
+The kernel retains GPL-2.0-only and the individual source-file terms. Its
+`COPYING` is embedded as `goldfish-kernel-COPYING.txt`. The complete pinned
+source archive, actual `.config`, build information, and project build script
+accompany the IPA artifacts. `scripts/build_highmem_kernel.py` records source
+and compiler URLs, revisions and checksums. The compiler is AOSP's Linux ARM
+GCC 4.8 at revision `26e93f6af47f7bd3a9beb5c102a5f45e19bfa38a`; compiler
+binaries are used for building/testing and are not included in the app.
 
 ## AOSP EmuGL and ANGLE
 

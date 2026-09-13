@@ -213,7 +213,7 @@ bool TextureDraw::draw(GLuint texture, float rotation) {
     // setup the |rotation| uniform value.
     s_gles2.glUniform1f(mRotationSlot, rotation * M_PI / 180.);
 
-#if 1
+#ifdef AE_VALIDATE_EVERY_DRAW
     // Validate program, just to be sure.
     s_gles2.glValidateProgram(mProgram);
     GLint validState = 0;

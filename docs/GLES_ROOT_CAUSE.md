@@ -22,7 +22,17 @@
 
 ## 低メモリ端末向け
 
-RAM 3 GB以下の端末は、TCGキャッシュ最大128 MiB・ゲストRAM最大640 MiB。画面幅は既定360 px。GPU投稿の同じ行は再変換せず、同一画面なら転送せず、変更行だけをQEMU・Metalへ渡す。大きなアップロード後は受信バッファを64 KiBへ縮小し、大きな応答バッファも保持し続けない。フレームは最新状態へ集約し、無制限の描画キューを作らない。
+RAM 3 GB以下の端末はTCGキャッシュ最大128 MiB、ゲストRAMは640 MiBを推奨（手動指定値を自動で減らさない）。画面幅は既定360 px。GPU投稿の同じ行は再変換せず、同一画面なら転送せず、変更行だけをQEMU・Metalへ渡す。大きなアップロード後は受信バッファを64 KiBへ縮小し、大きな応答バッファも保持し続けない。フレームは最新状態へ集約し、無制限の描画キューを作らない。
+
+## 操作時のノイズに対する追加修正
+
+`WindowSurface::flushColorBuffer`はEGLの描画先を切り替えるが、GLのFBOバインドはリセットしない。以前の`ColorBuffer::blitFromCurrentReadBuffer`はそのまま`glCopyTexSubImage2D`を実行していたため、ゲストがオフスクリーンFBOを残してswapすると、画面ではなくそのレイヤーをコピーした。
+
+実デコーダーのテストで、赤／青の画面を描いた後に緑のFBOをバインドしてswapし、表示結果へ緑が混入することを再現した。修正前は失敗、修正後は画面の赤／青とレイヤーの緑がそれぞれ保たれることを確認。GLES1/2とも画面コピー中だけFBO 0へ切り替え、元のバインドを復元する。surface/context復元とflushの失敗も呼び出し元へ返す。
+
+EGLのホスト拡張文字列も直接渡さず、[旧Goldfishゲストの動的拡張リスト](https://android.googlesource.com/device/generic/goldfish/+/android-6.0.1_r1/opengl/system/egl/eglDisplay.cpp)の範囲へ制限する。buffer age、partial update、blob cache、ホスト専用fence等をホストが持つだけでゲスト対応とはしない。旧ゲストのパーサーに必要な末尾スペースを保つ。ゲスト／wireのEGLバージョンは1.4。毎フレームの`glValidateProgram`は診断用マクロがある場合だけ実行する。
+
+これで実機の全ノイズが解消したとは未確認。blob cache警告、`unknown buffer`、LauncherのActivity timeoutだけでは、ANRのスレッド待ちや実機の画像破損原因は確定しない。ANR診断は最後のANR情報・traces・メモリ・ログを取得する。ANR猶予時間の延長やLauncher専用の強制再起動で隠す処理は加えない。
 
 ## 検証
 

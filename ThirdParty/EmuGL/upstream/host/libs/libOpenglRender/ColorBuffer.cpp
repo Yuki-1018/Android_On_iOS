@@ -281,7 +281,13 @@ bool ColorBuffer::blitFromCurrentReadBuffer()
     // then call glCopyTexSubImage2D().
     GLuint tmpTex;
     GLint currTexBind;
+    GLint currFramebuffer;
+    // eglSwapBuffers presents the window, not the last offscreen layer bound
+    // by the guest. eglMakeCurrent preserves FBO bindings. Copying that FBO
+    // instead exposes layer pixels (or undefined pixels outside a smaller FBO).
     if (tInfo->currContext->isGL2()) {
+        s_gles2.glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currFramebuffer);
+        s_gles2.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         s_gles2.glGetIntegerv(GL_TEXTURE_BINDING_2D, &currTexBind);
         s_gles2.glGenTextures(1,&tmpTex);
         s_gles2.glBindTexture(GL_TEXTURE_2D, tmpTex);
@@ -290,8 +296,11 @@ bool ColorBuffer::blitFromCurrentReadBuffer()
                                   m_width, m_height);
         s_gles2.glDeleteTextures(1, &tmpTex);
         s_gles2.glBindTexture(GL_TEXTURE_2D, currTexBind);
+        s_gles2.glBindFramebuffer(GL_FRAMEBUFFER, currFramebuffer);
     }
     else {
+        s_gles1.glGetIntegerv(GL_FRAMEBUFFER_BINDING_OES, &currFramebuffer);
+        s_gles1.glBindFramebufferOES(GL_FRAMEBUFFER_OES, 0);
         s_gles1.glGetIntegerv(GL_TEXTURE_BINDING_2D, &currTexBind);
         s_gles1.glGenTextures(1,&tmpTex);
         s_gles1.glBindTexture(GL_TEXTURE_2D, tmpTex);
@@ -300,6 +309,7 @@ bool ColorBuffer::blitFromCurrentReadBuffer()
                                  m_width, m_height);
         s_gles1.glDeleteTextures(1, &tmpTex);
         s_gles1.glBindTexture(GL_TEXTURE_2D, currTexBind);
+        s_gles1.glBindFramebufferOES(GL_FRAMEBUFFER_OES, currFramebuffer);
     }
 
 #ifdef AE_SYNC_SHARED_IMAGES

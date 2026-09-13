@@ -16,9 +16,12 @@ verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
 class ArtifactTests(unittest.TestCase):
-    def make_ipa(self, path, extra=None, cache=True):
+    def make_ipa(self, path, extra=None, cache=True, kernel=True):
         info = {'MinimumOSVersion': '17.0', 'CFBundleExecutable': 'AndroidEmu', 'LSApplicationQueriesSchemes': ['stikdebug']}
         with zipfile.ZipFile(path, 'w') as archive:
+            if kernel:
+                archive.writestr('Payload/AndroidEmu.app/goldfish-highmem.zImage', bytes(36) + struct.pack('<III', 0x016f2818, 0, 48))
+                archive.writestr('Payload/AndroidEmu.app/goldfish-kernel-COPYING.txt', 'GPL-2.0 fixture')
             if cache:
                 archive.writestr('Payload/AndroidEmu.app/cache-template.sparse',
                     struct.pack('<I4H4I', 0xed26ff3a, 1, 0, 28, 12, 4096, 16384, 1, 0) + struct.pack('<2H2I', 0xcac3, 0, 16384, 12))
@@ -40,6 +43,13 @@ class ArtifactTests(unittest.TestCase):
             path = Path(folder) / 'app.ipa'
             self.make_ipa(path, cache=False)
             with self.assertRaisesRegex(ValueError, 'cache filesystem template'):
+                verify.verify(path)
+
+    def test_missing_highmem_kernel_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'app.ipa'
+            self.make_ipa(path, kernel=False)
+            with self.assertRaisesRegex(ValueError, 'HIGHMEM kernel'):
                 verify.verify(path)
 
     def test_guest_and_path_rejection(self):

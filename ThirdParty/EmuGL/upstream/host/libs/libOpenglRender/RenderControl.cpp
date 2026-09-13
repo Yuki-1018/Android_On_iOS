@@ -38,8 +38,9 @@ static EGLint rcGetEGLVersion(EGLint* major, EGLint* minor)
     if (!fb) {
         return EGL_FALSE;
     }
-    *major = (EGLint)fb->getCaps().eglMajor;
-    *minor = (EGLint)fb->getCaps().eglMinor;
+    // The guest/wire API is EGL 1.4, irrespective of the host's EGL version.
+    *major = 1;
+    *minor = 4;
 
     return EGL_TRUE;
 }
@@ -54,6 +55,25 @@ static EGLint rcQueryEGLString(EGLenum name, void* buffer, EGLint bufferSize)
     const char *str = s_egl.eglQueryString(fb->getDisplay(), name);
     if (!str) {
         return 0;
+    }
+
+    std::string filtered;
+    if (name == EGL_EXTENSIONS) {
+        // Match the legacy Goldfish guest's dynamic extension contract. Native
+        // ANGLE extensions (buffer age, damage, blob cache, native fences, ES3
+        // context creation) do not acquire guest implementations by forwarding
+        // their names. Guest-native-buffer/fence support is supplied locally.
+        std::istringstream extensions(str);
+        std::string extension;
+        while (extensions >> extension) {
+            if (extension == "EGL_KHR_image_base" || extension == "EGL_KHR_gl_texture_2d_image")
+                filtered += extension + ' '; // Old guest parsers require trailing space.
+        }
+        str = filtered.c_str();
+    } else if (name == EGL_VERSION) {
+        str = "1.4 AndroidEmu";
+    } else if (name == EGL_CLIENT_APIS) {
+        str = "OpenGL_ES";
     }
 
     int len = strlen(str) + 1;

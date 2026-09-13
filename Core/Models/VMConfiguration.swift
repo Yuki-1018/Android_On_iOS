@@ -1,7 +1,29 @@
 import Foundation
 
 struct VMConfiguration: Codable, Equatable, Sendable {
-    enum RAM: Int, Codable, CaseIterable { case low = 512, balanced = 640, high = 768, maximum = 1024 }
+    struct RAM: RawRepresentable, Codable, Equatable, Hashable, Sendable {
+        let rawValue: Int
+        init?(rawValue: Int) {
+            guard (512...4096).contains(rawValue) else { return nil }
+            self.rawValue = rawValue
+        }
+        static let balanced = RAM(rawValue: 640)!
+        // The ARMv7 board reserves its top 16 MiB for MMIO.
+        var guestMiB: Int { min(rawValue, 4080) }
+        var needsHighmemKernel: Bool { guestMiB > 760 }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(Int.self)
+            guard let ram = RAM(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "RAM must be 512...4096 MiB")
+            }
+            self = ram
+        }
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
+    }
     enum Cache: Int, Codable, CaseIterable { case small = 128, balanced = 192, performance = 256 }
     enum Resolution: String, Codable, CaseIterable {
         case performance = "360×640", low = "480×854", balanced = "540×960", high = "720×1280"

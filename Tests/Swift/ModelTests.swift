@@ -110,6 +110,19 @@ final class ModelTests: XCTestCase {
         var invalid = config; invalid.cpuCount = 4
         XCTAssertThrowsError(try invalid.validate())
     }
+    func testArbitraryMemoryAndLegacyProfiles() throws {
+        for value in [512, 640, 768, 1024, 1537, 2048, 4080, 4096] {
+            let ram = try JSONDecoder().decode(VMConfiguration.RAM.self, from: Data("\(value)".utf8))
+            XCTAssertEqual(ram.rawValue, value)
+            XCTAssertEqual(try JSONEncoder().encode(ram), Data("\(value)".utf8))
+            XCTAssertEqual(ram.guestMiB, min(value, 4080))
+            XCTAssertEqual(ram.needsHighmemKernel, value > 760)
+        }
+        for value in [0, 511, 4097, Int.max] {
+            XCTAssertNil(VMConfiguration.RAM(rawValue: value))
+            XCTAssertThrowsError(try JSONDecoder().decode(VMConfiguration.RAM.self, from: Data("\(value)".utf8)))
+        }
+    }
     func testFixedProfile() throws {
         let text = "AndroidVersion.ApiLevel=22\nSystemImage.Abi=armeabi-v7a\nSystemImage.TagId=default\n"
         let properties = try ImageProfile.properties(text)

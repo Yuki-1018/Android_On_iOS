@@ -7,6 +7,7 @@ if [[ "${sdk_version%%.*}" -lt 26 ]]; then
   exit 1
 fi
 [[ -f build/ios-frameworks/AndroidQEMU.framework/AndroidQEMU ]] || { echo "Build iOS engine dependencies first" >&2; exit 1; }
+[[ -s build/guest-kernel/goldfish-highmem.zImage ]] || { echo "Build/download the HIGHMEM guest-kernel artifact first" >&2; exit 1; }
 python3 scripts/generate_project.py
 python3 scripts/create_cache_template.py
 xcodebuild -project AndroidEmu.xcodeproj -scheme AndroidEmu -configuration Release \

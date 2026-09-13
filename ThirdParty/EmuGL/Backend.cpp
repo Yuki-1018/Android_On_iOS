@@ -70,6 +70,7 @@ bool ae_backend_init() {
         "glAttachShader",
         "glBindBuffer",
         "glBindFramebuffer",
+        "glBindFramebufferOES",
         "glBindTexture",
         "glBufferData",
         "glCheckFramebufferStatus",

@@ -64,8 +64,9 @@ bool gf_guest_virtual(Android51State *s, uint32_t address, void *buffer,
 static void android51_init(MachineState *machine)
 {
     Android51State *s = ANDROID51_MACHINE(machine);
-    if (machine->ram_size < 128 * MiB || machine->ram_size > GiB) {
-        error_report("android51: RAM must be between 128 and 1024 MiB");
+    // 0xff000000 and above belongs to Goldfish MMIO, not contiguous RAM.
+    if (machine->ram_size < 128 * MiB || machine->ram_size > 4080 * MiB) {
+        error_report("android51: RAM must be between 128 and 4080 MiB (top 16 MiB reserved for MMIO)");
         exit(EXIT_FAILURE);
     }
     if (s->width < 320 || s->width > 720 || s->height < 480 || s->height > 1600 || s->width % 4 || s->height % 2) {
