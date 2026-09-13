@@ -58,3 +58,27 @@ class AngleSDKCompatibilityTests(unittest.TestCase):
             header.write_text('changed upstream')
             with self.assertRaises(ValueError):
                 module.prepare(root)
+
+
+class AngleCMakeDiscoveryTests(unittest.TestCase):
+    def test_explicit_angle_survives_sdk_rooted_search_and_missing_file_fails(self):
+        import subprocess
+        with tempfile.TemporaryDirectory(prefix='angle discovery ') as directory:
+            root = Path(directory)
+            library = root / 'libEGL.dylib'
+            library.touch()
+            # Exercise the real Apple CMake branch on Linux, without pretending
+            # to compile or link iOS code. ONLY reproduces SDK-rooted discovery.
+            command = [
+                'cmake', '-S', str(ROOT / 'ThirdParty/EmuGL'), '-B', str(root / 'build'),
+                '-DAPPLE=TRUE', '-DEMUGEN=/bin/true',
+                f'-DANGLE_LIBRARY:FILEPATH={library}',
+                f'-DCMAKE_FIND_ROOT_PATH={root / "sdk"}',
+                '-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY',
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            library.unlink()
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('ANGLE_LIBRARY must name an existing', result.stderr)

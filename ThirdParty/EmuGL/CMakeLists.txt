@@ -53,8 +53,17 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(androidemugl PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 if(APPLE)
+  # EGL comes from our ANGLE build, not the Apple SDK. The iOS build script
+  # passes its verified dylib explicitly because SDK-rooted searches can hide
+  # the external dependency prefix. Native macOS callers can still discover it.
+  if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT ANGLE_LIBRARY)
+    message(FATAL_ERROR "Set ANGLE_LIBRARY to the iOS ANGLE build's libEGL.dylib (run scripts/build_qemu_ios.sh)")
+  endif()
   find_library(ANGLE_LIBRARY NAMES EGL REQUIRED)
-  target_link_libraries(androidemugl PUBLIC ${ANGLE_LIBRARY})
+  if(NOT IS_ABSOLUTE "${ANGLE_LIBRARY}" OR NOT EXISTS "${ANGLE_LIBRARY}" OR IS_DIRECTORY "${ANGLE_LIBRARY}")
+    message(FATAL_ERROR "ANGLE_LIBRARY must name an existing ANGLE EGL library: ${ANGLE_LIBRARY}")
+  endif()
+  target_link_libraries(androidemugl PUBLIC "${ANGLE_LIBRARY}")
   target_compile_definitions(androidemugl PRIVATE AE_ANGLE_METAL=1)
 endif()
 install(TARGETS androidemugl ARCHIVE DESTINATION lib)
