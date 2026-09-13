@@ -1,6 +1,5 @@
 # AndroidEmu
-
-`CODEX_ANDROID_EMULATOR_COMPLETE.md`を目標とする、iOS 17+実機arm64向けAndroid 5.1.1 / API 22 / ARMv7 Goldfishエミュレータです。
+iOS 17+実機arm64向けAndroid 5.1.1 / API 22 / ARMv7 Goldfishエミュレータです。
 
 iOS用の全画面Runtime、QEMU shared library起動、modern JIT領域の受け渡し、Metal描画、タッチ、音声、NAT、ADB/APK操作を実装しています。**Linuxで埋め込みエンジンを検証しましたが、iOSビルド・実機でのAndroid起動・Launcher到達は未確認です。** 詳しい到達点は[実装状況](IMPLEMENTATION_STATUS.md)を参照してください。
 
