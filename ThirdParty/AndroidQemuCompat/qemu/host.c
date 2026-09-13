@@ -3,6 +3,7 @@
 #include "android51.h"
 #include "android51_host.h"
 #include "adb.h"
+#include "gpu.h"
 #include "tcg/tcg.h"
 #include "system/tcg.h"
 #include "accel/tcg/tb-context.h"
@@ -68,6 +69,16 @@ static void host_poll(void *opaque)
     }
     /* Realtime timer remains live while the virtual clock is paused. */
     timer_mod(poll_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 5);
+}
+int android51_host_prepare_graphics(unsigned width, unsigned height, char *error, size_t capacity)
+{
+#ifdef AE_HAS_EMUGL
+    if (ae_gpu_init(width, height)) { return 0; }
+    if (error && capacity) { g_strlcpy(error, ae_gpu_last_error(), capacity); }
+#else
+    if (error && capacity) { g_strlcpy(error, "Engine was built without the GPU renderer", capacity); }
+#endif
+    return -2;
 }
 int android51_host_run(int argc, char **argv, const Android51Host *host)
 {

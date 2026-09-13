@@ -2,7 +2,8 @@
 """Normalize the pinned ANGLE archive's install names inside the iOS sysroot.
 
 Xcode archives use /usr/local/lib install names. Preserve real link dependencies
-so package_engine_frameworks can discover and embed both EGL and GLES dylibs.
+for framework packaging. EmuGL links the GLES implementation directly; verify
+its EGL entry point so the WebKit filename-based loader is never required.
 """
 from pathlib import Path
 import subprocess
@@ -23,6 +24,9 @@ def normalize(prefix):
     symbols = subprocess.check_output(['xcrun', 'nm', '-gUj', str(owned['libEGL.dylib'])], text=True).splitlines()
     if '_eglGetProcAddress' not in symbols:
         raise ValueError('ANGLE EGL library does not export eglGetProcAddress')
+    symbols = subprocess.check_output(['xcrun', 'nm', '-gUj', str(owned['libGLESv2.dylib'])], text=True).splitlines()
+    if '_EGL_GetProcAddress' not in symbols:
+        raise ValueError('ANGLE GLES library does not export EGL_GetProcAddress')
 
 
 if __name__ == '__main__':

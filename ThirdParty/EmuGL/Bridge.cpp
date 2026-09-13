@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 #include <new>
+#include <cstdio>
 #include <algorithm>
 extern bool ae_backend_init();
 namespace {
@@ -19,6 +20,7 @@ std::mutex frameLock;
 emugl::Mutex renderLock;
 std::vector<uint8_t> frame;
 bool havePost = false, pending = false, initialized = false, attempted = false;
+char initializationError[256] = "GPU initialization has not completed";
 unsigned width, height, dirtyFirst, dirtyLast;
 std::vector<uint8_t> rgba;
 void post(void *, int w, int h, int direction, int format, int type, unsigned char *pixels) {
@@ -109,20 +111,33 @@ int transfer(void *opaque, void *data, size_t size, bool sending) {
     return n <= 0 && size ? -4 : int(n);
 }
 }
+extern "C" const char *ae_gpu_last_error() { return initializationError; }
+extern "C" void ae_gpu_set_error(const char *message) {
+    std::snprintf(initializationError, sizeof(initializationError), "%s", message);
+}
 extern "C" int ae_gpu_init(unsigned w, unsigned h) {
     if (attempted) return initialized;
     attempted = true;
-    if (!w || !h || w > 2048 || h > 2048 || !ae_backend_init()) return 0;
-    width = w; height = h;
-    frame.resize(size_t(w) * h * 4);
-    rgba.resize(frame.size(), 0xff);
-    // A first all-white frame still needs a full presentation.
-    pending = true; dirtyFirst = 0; dirtyLast = h - 1;
-    for (size_t i = 3; i < frame.size(); i += 4) frame[i] = 255;
-    if (!FrameBuffer::initialize(w, h)) return 0;
-    FrameBuffer::getFB()->setPostCallback(post, nullptr);
-    initialized = true;
-    return 1;
+    if (!w || !h || w > 2048 || h > 2048) {
+        ae_gpu_set_error("Invalid GPU framebuffer dimensions"); return 0;
+    }
+    if (!ae_backend_init()) return 0;
+    try {
+        width = w; height = h;
+        frame.resize(size_t(w) * h * 4);
+        rgba.resize(frame.size(), 0xff);
+        // A first all-white frame still needs a full presentation.
+        pending = true; dirtyFirst = 0; dirtyLast = h - 1;
+        for (size_t i = 3; i < frame.size(); i += 4) frame[i] = 255;
+        if (!FrameBuffer::initialize(w, h)) return 0;
+        FrameBuffer::getFB()->setPostCallback(post, nullptr);
+        initialized = true;
+        initializationError[0] = '\0';
+        return 1;
+    } catch (const std::bad_alloc&) {
+        ae_gpu_set_error("Insufficient memory while initializing GPU");
+        return 0;
+    }
 }
 extern "C" void *ae_gpu_open() {
     if (!initialized) return nullptr;

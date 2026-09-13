@@ -49,7 +49,20 @@ struct Client {
         check(call(OP_glGetShaderiv,{id,0x8B81,4},1)[0]==1,"shader compile"); return id;
     }
 };
-int main() {
+int main(int argc, char **argv) {
+ if (argc == 2 && std::string(argv[1]) == "--invalid-dimensions") {
+    check(ae_gpu_init(0, 64) == 0, "invalid dimensions return an error");
+    check(std::string(ae_gpu_last_error()).find("dimensions") != std::string::npos,
+          "initialization diagnostic survives failure");
+    check(ae_gpu_open() == nullptr, "failed renderer cannot open connections");
+    return 0;
+ }
+ if (argc == 2 && std::string(argv[1]) == "--unavailable-egl") {
+    check(ae_gpu_init(64, 64) == 0, "unavailable EGL returns without terminating");
+    check(ae_gpu_last_error()[0] != 0, "EGL failure diagnostic");
+    check(ae_gpu_open() == nullptr, "failed EGL cannot open connections");
+    return 0;
+ }
  try {
     check(ae_gpu_init(64,64)==1,"EGL/GLES1/GLES2/EGLImage initialization");
     Client first, second;

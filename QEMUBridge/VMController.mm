@@ -42,6 +42,7 @@ static std::string optionPath(NSString *path) {
     NSMutableData *_log;
     NSString *_statusText;
     void *_library;
+    int (*_prepareGraphics)(unsigned, unsigned, char *, size_t);
     int (*_run)(int, char **, const Android51Host *);
     void (*_pause)(bool);
     void (*_stop)(void);
@@ -169,6 +170,7 @@ static std::string optionPath(NSString *path) {
         if (!symbol) [missing addObject:[NSString stringWithUTF8String:name]];
         return symbol;
     };
+    _prepareGraphics = reinterpret_cast<decltype(_prepareGraphics)>(resolve("android51_host_prepare_graphics"));
     _run = reinterpret_cast<decltype(_run)>(resolve("android51_host_run"));
     _pause = reinterpret_cast<decltype(_pause)>(resolve("android51_host_pause"));
     _stop = reinterpret_cast<decltype(_stop)>(resolve("android51_host_stop"));
@@ -213,13 +215,22 @@ static std::string optionPath(NSString *path) {
             argv.push_back(nullptr);
             Android51Host host = {ANDROID51_HOST_ABI, sizeof(Android51Host), (__bridge void *)self,
                 frameCallback, inputCallback, pcmCallback, serialCallback, stateCallback};
-            int result = self->_run((int)owned.size(), argv.data(), &host);
+            char graphicsError[256] = {};
+            int result = self->_prepareGraphics(self->_width, self->_height, graphicsError, sizeof(graphicsError));
+            NSString *startupError = nil;
+            if (result != 0) {
+                startupError = [NSString stringWithFormat:@"GPUの初期化に失敗しました: %s", graphicsError];
+                NSData *message = [startupError dataUsingEncoding:NSUTF8StringEncoding];
+                [self hostSerial:static_cast<const uint8_t *>(message.bytes) length:message.length];
+            } else {
+                result = self->_run((int)owned.size(), argv.data(), &host);
+            }
             dispatch_async(dispatch_get_main_queue(), ^{
                 self->_worker = nil;
                 [self->_adb cancel];
                 self->_stopped = YES; self->_display.paused = YES; self->_input.userInteractionEnabled = NO; [self->_audio stop];
                 [UIApplication sharedApplication].idleTimerDisabled = NO;
-                self->_statusText = result == 0 ? @"停止しました。再起動にはアプリを開き直してください" : @"QEMUがエラーで停止しました";
+                self->_statusText = startupError ?: (result == 0 ? @"停止しました。再起動にはアプリを開き直してください" : @"QEMUがエラーで停止しました");
             });
         }
     }];

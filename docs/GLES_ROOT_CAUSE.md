@@ -37,3 +37,11 @@ RAM 3 GB以下の端末は、TCGキャッシュ最大128 MiB・ゲストRAM最�
 ASan/UBSanでも描画テストを実行。Mesaのプロセス寿命キャッシュはリーク検査から除外。さらにGPU付きQEMUで14件のMMIO・TCG・pipe回帰テストを実行した。
 
 残る実機確認は、iOS 17/18/26の署名ビルド、Android 4〜6各SDKイメージ、Browser・独立WebViewアプリ・GLES1/2アプリ、バックグラウンド復帰、iPad 9でのFPSとピークメモリ。これらの結果を未測定の速度や互換性の保証に置き換えない。
+
+## 起動直後のNULL実行とANGLEローダー
+
+固定版WebKitの[EGLビルド設定](https://github.com/utmapp/WebKit/blob/ed78ab6e1a37f4f11583a0bd038f22ec91f3ff10/Source/ThirdParty/ANGLE/Configurations/EGL-dynamic.xcconfig)は`ANGLE_USE_EGL_LOADER`と`ANGLE_DISPATCH_LIBRARY="GLESv2"`を指定する。[libEGLの実装](https://github.com/utmapp/WebKit/blob/ed78ab6e1a37f4f11583a0bd038f22ec91f3ff10/Source/ThirdParty/ANGLE/src/libEGL/libEGL_autogen.cpp)はロード失敗後も`EGL_GetProcAddress`の内部ポインタを呼ぶ。Framework化で実行ファイル名・配置を変える本アプリでは、この検索経路を使用しない。
+
+EmuGLは実装側`libGLESv2`の公開関数`EGL_GetProcAddress`へ直接リンクする。通常のMach-O依存として梱包され、`@rpath/libGLESv2.framework/libGLESv2`へ書き換わる。ビルド時のシンボル検査と、起動時のホスト描画用関数検査を追加した。関数が不足する場合は、その名前を起動エラーへ返す。
+
+`ANGLEBackendTests.cpp`は実際のMetal用Backend.cppをホスト上でコンパイルし、旧libEGL入口を呼ぶと異常終了する疑似ライブラリで、実装側への直接接続とNULL検出を検証する。実iOSの動作確認を代替するものではない。

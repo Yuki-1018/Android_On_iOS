@@ -15,6 +15,7 @@
 */
 
 #include "FrameBuffer.h"
+#include "Bridge.h"
 
 #include "EGLDispatch.h"
 #include "GLESv1Dispatch.h"
@@ -169,6 +170,7 @@ bool FrameBuffer::initialize(int width, int height)
     FrameBuffer *fb = new FrameBuffer(width, height);
     if (!fb) {
         ERR("Failed to create fb\n");
+        ae_gpu_set_error("Failed to create fb");
         return false;
     }
 
@@ -178,12 +180,14 @@ bool FrameBuffer::initialize(int width, int height)
     fb->m_eglDisplay = s_egl.eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (fb->m_eglDisplay == EGL_NO_DISPLAY) {
         ERR("Failed to Initialize backend EGL display\n");
+        ae_gpu_set_error("Failed to Initialize backend EGL display");
         delete fb;
         return false;
     }
 
     if (!s_egl.eglInitialize(fb->m_eglDisplay, &fb->m_caps.eglMajor, &fb->m_caps.eglMinor)) {
         ERR("Failed to eglInitialize\n");
+        ae_gpu_set_error("Failed to eglInitialize");
         delete fb;
         return false;
     }
@@ -219,6 +223,7 @@ bool FrameBuffer::initialize(int width, int height)
     if (!s_egl.eglChooseConfig(fb->m_eglDisplay, configAttribs,
                                &fb->m_eglConfig, 1, &n) || n <= 0) {
         ERR("Failed on eglChooseConfig\n");
+        ae_gpu_set_error("Failed on eglChooseConfig");
         free(gles1Extensions);
         delete fb;
         return false;
@@ -235,6 +240,7 @@ bool FrameBuffer::initialize(int width, int height)
                                               glContextAttribs);
     if (fb->m_eglContext == EGL_NO_CONTEXT) {
         printf("Failed to create Context 0x%x\n", s_egl.eglGetError());
+        ae_gpu_set_error("Failed to create Context");
         free(gles1Extensions);
         delete fb;
         return false;
@@ -254,6 +260,7 @@ bool FrameBuffer::initialize(int width, int height)
                                                glContextAttribs);
     if (fb->m_pbufContext == EGL_NO_CONTEXT) {
         printf("Failed to create Pbuffer Context 0x%x\n", s_egl.eglGetError());
+        ae_gpu_set_error("Failed to create Pbuffer Context");
         free(gles1Extensions);
         delete fb;
         return false;
@@ -275,6 +282,7 @@ bool FrameBuffer::initialize(int width, int height)
                                                   pbufAttribs);
     if (fb->m_pbufSurface == EGL_NO_SURFACE) {
         printf("Failed to create pbuf surface for FB 0x%x\n", s_egl.eglGetError());
+        ae_gpu_set_error("Failed to create pbuf surface for FB");
         free(gles1Extensions);
         delete fb;
         return false;
@@ -284,6 +292,7 @@ bool FrameBuffer::initialize(int width, int height)
     ScopedBind bind(fb);
     if (!bind.isValid()) {
         ERR("Failed to make current\n");
+        ae_gpu_set_error("Failed to make current");
         free(gles1Extensions);
         delete fb;
         return false;
@@ -329,6 +338,7 @@ bool FrameBuffer::initialize(int width, int height)
     //
     if (!fb->m_caps.has_eglimage_texture_2d) {
         ERR("Failed: Missing egl_image related extension(s)\n");
+        ae_gpu_set_error("Failed: Missing egl_image related extension(s)");
         bind.release();
         delete fb;
         return false;
@@ -340,6 +350,7 @@ bool FrameBuffer::initialize(int width, int height)
     fb->m_configs = new FbConfigList(fb->m_eglDisplay, hasGLES1);
     if (fb->m_configs->empty()) {
         ERR("Failed: Initialize set of configs\n");
+        ae_gpu_set_error("Failed: Initialize set of configs");
         bind.release();
         delete fb;
         return false;
@@ -371,6 +382,7 @@ bool FrameBuffer::initialize(int width, int height)
     //
     if (nGL2Configs == 0) {
         ERR("Failed: No GLES 2.x configs found!\n");
+        ae_gpu_set_error("Failed: No GLES 2.x configs found!");
         bind.release();
         delete fb;
         return false;
@@ -386,7 +398,7 @@ bool FrameBuffer::initialize(int width, int height)
 
     // The embedded renderer has no subwindow; create the blitter here.
     fb->m_textureDraw = new TextureDraw(fb->getDisplay());
-    if (!fb->m_textureDraw->valid()) { bind.release(); delete fb; return false; }
+    if (!fb->m_textureDraw->valid()) { ae_gpu_set_error("GPU blitter shader initialization failed"); bind.release(); delete fb; return false; }
     // release the FB context
     bind.release();
 

@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 REQUIRED_ENGINE_SYMBOLS = frozenset({
-    'android51_host_run', 'android51_host_pause', 'android51_host_stop',
+    'android51_host_prepare_graphics', 'android51_host_run', 'android51_host_pause', 'android51_host_stop',
     'android51_host_metric', 'android51_tcg_set_region',
     'android51_adb_connected', 'android51_adb_disconnect',
     'android51_adb_read', 'android51_adb_write',

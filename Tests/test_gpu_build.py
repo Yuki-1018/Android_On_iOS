@@ -19,7 +19,7 @@ class AnglePackagingTests(unittest.TestCase):
                 (prefix / 'lib' / name).touch()
             def output(args, **kwargs):
                 if args[0] == 'xcrun':
-                    return '_eglGetProcAddress\n'
+                    return '_eglGetProcAddress\n_EGL_GetProcAddress\n'
                 return (args[-1] + ':\n /usr/local/lib/' + Path(args[-1]).name + ' (compatibility version 1.0.0)\n'
                         ' /usr/local/lib/libGLESv2.dylib (compatibility version 1.0.0)\n'
                         ' /System/Library/Frameworks/Metal.framework/Metal (compatibility version 1.0.0)\n')
@@ -35,6 +35,18 @@ class AnglePackagingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(FileNotFoundError):
                 angle.normalize(Path(directory))
+
+    def test_missing_direct_egl_implementation_export_fails_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory)
+            (prefix / 'lib').mkdir()
+            for name in ('libEGL.dylib', 'libGLESv2.dylib'):
+                (prefix / 'lib' / name).touch()
+            def output(args, **kwargs):
+                return '_eglGetProcAddress\n' if args[0] == 'xcrun' else args[-1] + ':\n'
+            with patch.object(angle.subprocess, 'check_output', side_effect=output), patch.object(angle.subprocess, 'run'):
+                with self.assertRaisesRegex(ValueError, 'GLES library does not export EGL_GetProcAddress'):
+                    angle.normalize(prefix)
 
 
 class AngleSDKCompatibilityTests(unittest.TestCase):
@@ -65,14 +77,14 @@ class AngleCMakeDiscoveryTests(unittest.TestCase):
         import subprocess
         with tempfile.TemporaryDirectory(prefix='angle discovery ') as directory:
             root = Path(directory)
-            library = root / 'libEGL.dylib'
+            library = root / 'libGLESv2.dylib'
             library.touch()
             # Exercise the real Apple CMake branch on Linux, without pretending
             # to compile or link iOS code. ONLY reproduces SDK-rooted discovery.
             command = [
                 'cmake', '-S', str(ROOT / 'ThirdParty/EmuGL'), '-B', str(root / 'build'),
                 '-DAPPLE=TRUE', '-DEMUGEN=/bin/true',
-                f'-DANGLE_LIBRARY:FILEPATH={library}',
+                f'-DANGLE_GLES_LIBRARY:FILEPATH={library}',
                 f'-DCMAKE_FIND_ROOT_PATH={root / "sdk"}',
                 '-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY',
             ]
@@ -81,7 +93,7 @@ class AngleCMakeDiscoveryTests(unittest.TestCase):
             library.unlink()
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('ANGLE_LIBRARY must name an existing', result.stderr)
+            self.assertIn('ANGLE_GLES_LIBRARY must name an existing', result.stderr)
 
 
 class LazyInstanceTests(unittest.TestCase):

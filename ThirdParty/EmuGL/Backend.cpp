@@ -1,5 +1,7 @@
 // AndroidEmu: ANGLE supplies actual EGL and both GLES implementations.
 #include "EGLDispatch.h"
+#include "Bridge.h"
+#include <cstdio>
 #include "GLESv1Dispatch.h"
 #include "GLESv2Dispatch.h"
 #include "NativeSubWindow.h"
@@ -9,11 +11,14 @@ EGLDispatch s_egl;
 gles1_decoder_context_t s_gles1;
 gles2_decoder_context_t s_gles2;
 #ifdef AE_ANGLE_METAL
-extern "C" __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *);
+// The pinned WebKit libEGL is a filename-based loader shim. Framework
+// packaging renames its GLESv2 dependency, so bypass that shim and link the
+// actual ANGLE entry point (export checked when constructing the sysroot).
+extern "C" __eglMustCastToProperFunctionPointerType EGLAPIENTRY EGL_GetProcAddress(const char *);
 #endif
 static void *resolve(const char *name) {
 #ifdef AE_ANGLE_METAL
-    return reinterpret_cast<void *>(eglGetProcAddress(name));
+    return reinterpret_cast<void *>(EGL_GetProcAddress(name));
 #else
     static void *egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
     static void *gles1 = dlopen("libGLESv1_CM.so.1", RTLD_NOW | RTLD_LOCAL);
@@ -39,6 +44,84 @@ static EGLDisplay backendDisplay(EGLNativeDisplayType) {
 #endif
 }
 bool ae_backend_init() {
+    // Check every entry point used by the host renderer before any context or
+    // framebuffer code can call through its dispatch table.
+    static const char *required[] = {
+        "eglBindAPI",
+        "eglChooseConfig",
+        "eglCreateContext",
+        "eglCreateImageKHR",
+        "eglCreatePbufferSurface",
+        "eglCreateWindowSurface",
+        "eglDestroyContext",
+        "eglDestroyImageKHR",
+        "eglDestroySurface",
+        "eglGetConfigAttrib",
+        "eglGetConfigs",
+        "eglGetCurrentContext",
+        "eglGetCurrentSurface",
+        "eglGetError",
+        "eglGetPlatformDisplayEXT",
+        "eglInitialize",
+        "eglMakeCurrent",
+        "eglQueryString",
+        "eglSwapBuffers",
+        "glActiveTexture",
+        "glAttachShader",
+        "glBindBuffer",
+        "glBindFramebuffer",
+        "glBindTexture",
+        "glBufferData",
+        "glCheckFramebufferStatus",
+        "glClear",
+        "glCompileShader",
+        "glCopyTexSubImage2D",
+        "glCreateProgram",
+        "glCreateShader",
+        "glDeleteBuffers",
+        "glDeleteFramebuffers",
+        "glDeleteProgram",
+        "glDeleteShader",
+        "glDeleteTextures",
+        "glDrawElements",
+        "glEGLImageTargetRenderbufferStorageOES",
+        "glEGLImageTargetTexture2DOES",
+        "glEnableVertexAttribArray",
+        "glFramebufferTexture2D",
+        "glGenBuffers",
+        "glGenFramebuffers",
+        "glGenTextures",
+        "glGetAttribLocation",
+        "glGetError",
+        "glGetIntegerv",
+        "glGetProgramInfoLog",
+        "glGetProgramiv",
+        "glGetShaderiv",
+        "glGetString",
+        "glGetUniformLocation",
+        "glLinkProgram",
+        "glPixelStorei",
+        "glReadPixels",
+        "glShaderSource",
+        "glTexImage2D",
+        "glTexParameteri",
+        "glTexSubImage2D",
+        "glUniform1f",
+        "glUniform1i",
+        "glUseProgram",
+        "glValidateProgram",
+        "glVertexAttribPointer",
+        "glViewport",
+    };
+    for (const char *name : required) {
+        if (!resolve(name)) {
+            char message[256];
+            std::snprintf(message, sizeof(message), "Missing GPU entry point: %s", name);
+            ae_gpu_set_error(message);
+            return false;
+        }
+    }
+
     s_egl.eglGetError = reinterpret_cast<eglGetError_t>(resolve("eglGetError"));
     s_egl.eglGetDisplay = reinterpret_cast<eglGetDisplay_t>(resolve("eglGetDisplay"));
     s_egl.eglInitialize = reinterpret_cast<eglInitialize_t>(resolve("eglInitialize"));

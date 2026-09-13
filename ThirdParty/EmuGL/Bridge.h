@@ -8,6 +8,8 @@ extern "C" {
 /* All entry points except the renderer's post callback run on the QEMU thread.
  * Streams return bytes transferred, -2 for backpressure and -4 for closure. */
 int ae_gpu_init(unsigned width, unsigned height);
+const char *ae_gpu_last_error(void);
+void ae_gpu_set_error(const char *message);
 void *ae_gpu_open(void);
 void ae_gpu_close(void *stream);
 int ae_gpu_fd(void *stream);

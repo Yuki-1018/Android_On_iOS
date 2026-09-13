@@ -24,7 +24,7 @@ The iOS backend is UTM's pinned WebKit ANGLE, built by the upstream `build_angle
 
 - https://github.com/utmapp/WebKit/tree/ed78ab6e1a37f4f11583a0bd038f22ec91f3ff10/Source/ThirdParty/ANGLE
 - ANGLE includes GLES1 emulation in its frontend; `Display.cpp` adds GLES1 renderable configurations to the Metal backend's GLES2 configurations.
-- `scripts/normalize_angle.py` preserves the EGL → GLES dylib dependency for framework packaging. Corresponding ANGLE sources/licenses are collected with the dependency build inputs.
+- The iOS backend links `EGL_GetProcAddress` exported by the pinned `libGLESv2` directly. WebKit's `libEGL` shim dynamically searches for `GLESv2` by filename and can call NULL when that lookup fails after framework repackaging. The direct dependency is visible to the framework packager; `normalize_angle.py` verifies the implementation export before compiling EmuGL. Corresponding ANGLE sources/licenses are collected with the dependency build inputs.
 
 Android 6 reference protocols:
 

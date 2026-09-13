@@ -22,6 +22,9 @@ typedef struct Android51Host {
 } Android51Host;
 /* Exactly one lifecycle per process. Run on an owned thread. Returns -1 for
  * invalid ABI/repeated invocation; QEMU fatal initialization errors can exit. */
+/* Call on the same owned thread before run; GPU failure returns without exiting
+ * the embedding app. Dimensions must match the machine options. */
+int android51_host_prepare_graphics(unsigned width, unsigned height, char *error, size_t capacity);
 int android51_host_run(int argc, char **argv, const Android51Host *host);
 void android51_host_pause(bool paused);
 void android51_host_stop(void);
