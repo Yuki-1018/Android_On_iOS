@@ -72,3 +72,26 @@ class ZipTests(unittest.TestCase):
             z.writestr('android', b'file')
             z.writestr('android/source.properties', b'bad')
         self.run_archive(archive, False)
+
+    def test_deflate_input_and_output_boundary(self):
+        # Incompressible data with a small compressible prefix makes both
+        # 64 KiB buffers end together, requiring a harmless Z_BUF_ERROR drain.
+        import random
+        import zlib
+        raw = random.Random(73).randbytes(131072)
+        data = None
+        for prefix in range(256):
+            candidate = bytes(prefix) + raw[prefix:]
+            compressor = zlib.compressobj(wbits=-15)
+            packed = compressor.compress(candidate) + compressor.flush()
+            if len(zlib.decompressobj(-15).decompress(packed[:65536])) == 65536:
+                data = candidate
+                break
+        self.assertIsNotNone(data, 'Unable to construct buffer-boundary fixture')
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'image.zip', Path(tmp) / 'expanded'
+            with zipfile.ZipFile(source, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr('system.img', data)
+            result = subprocess.run([str(TOOL), str(source), str(output)], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            self.assertEqual((output / 'system.img').read_bytes(), data)

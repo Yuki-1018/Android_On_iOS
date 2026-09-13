@@ -112,6 +112,10 @@ void extractImageZip(const std::filesystem::path& source, const std::filesystem:
                 do {
                     stream.next_out = buffer.data(); stream.avail_out = uInt(buffer.size());
                     result = inflate(&stream, Z_NO_FLUSH);
+                    // A full output block can exhaust the input exactly. The next
+                    // drain call then legitimately needs another compressed block.
+                    if (result == Z_BUF_ERROR && stream.avail_in == 0 &&
+                        stream.avail_out == buffer.size()) break;
                     require(result == Z_OK || result == Z_STREAM_END, "Invalid ZIP deflate stream");
                     write(buffer.data(), buffer.size()-stream.avail_out);
                     if (result == Z_STREAM_END) {

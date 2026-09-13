@@ -35,3 +35,26 @@ class AnglePackagingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(FileNotFoundError):
                 angle.normalize(Path(directory))
+
+
+class AngleSDKCompatibilityTests(unittest.TestCase):
+    def test_patch_is_idempotent_and_rejects_source_drift(self):
+        spec = importlib.util.spec_from_file_location('prepare_angle', ROOT / 'scripts/prepare_angle.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'Configurations/CommonBase.xcconfig'
+            header = root / 'Source/ThirdParty/ANGLE/src/common/bitset_utils.h'
+            config.parent.mkdir(parents=True)
+            header.parent.mkdir(parents=True)
+            config.write_text('\n'.join(['-D_LIBCPP_ENABLE_ASSERTIONS=1'] * 5))
+            header.write_text('if (priv::kDefaultBitSetSize < 64)')
+            module.prepare(root)
+            expected = (config.read_text(), header.read_text())
+            module.prepare(root)
+            self.assertEqual(expected, (config.read_text(), header.read_text()))
+            self.assertNotIn('_LIBCPP_ENABLE_ASSERTIONS', expected[0])
+            header.write_text('changed upstream')
+            with self.assertRaises(ValueError):
+                module.prepare(root)

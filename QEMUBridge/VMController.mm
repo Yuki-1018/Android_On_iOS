@@ -92,9 +92,9 @@ static std::string optionPath(NSString *path) {
     [_input addGestureRecognizer:menuGesture];
     for (UIView *view in @[_display, _input]) {
         view.translatesAutoresizingMaskIntoConstraints = NO; [self.view addSubview:view];
-        [NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
-            [view.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
-            [view.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor], [view.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
+        [NSLayoutConstraint activateConstraints:@[[view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+            [view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+            [view.topAnchor constraintEqualToAnchor:self.view.topAnchor], [view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]]];
     }
 }
 - (void)openControls:(UILongPressGestureRecognizer *)gesture {
@@ -136,7 +136,9 @@ static std::string optionPath(NSString *path) {
     CGSize panel = CGSizeMake(540, 960);
     UIWindow *window = self.viewIfLoaded.window ?: scene.keyWindow;
     if (window) {
-        panel = UIEdgeInsetsInsetRect(window.bounds, window.safeAreaInsets).size;
+        // Runtime hides the status bar and fills the window. Using the
+        // library's safe area here shortens the SE panel before presentation.
+        panel = window.bounds.size;
     } else if (scene) {
         if (@available(iOS 26.0, *)) { panel = scene.effectiveGeometry.coordinateSpace.bounds.size; }
         else { panel = scene.coordinateSpace.bounds.size; }

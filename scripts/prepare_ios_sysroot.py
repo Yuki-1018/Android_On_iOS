@@ -34,6 +34,7 @@ download_all () {
     clone "$WEBKIT_REPO" "$WEBKIT_COMMIT" "$WEBKIT_SUBDIRS"
 }
 build_qemu_dependencies () {
+    python3 "$ANDROID51_UTM_ROOT/../../../scripts/prepare_angle.py" "$BUILD_DIR/WebKit.git"
     build_angle
     build "$FFI_SRC"
     build "$ICONV_SRC"
