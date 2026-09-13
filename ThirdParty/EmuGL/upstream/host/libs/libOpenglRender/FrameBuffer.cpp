@@ -938,8 +938,8 @@ bool FrameBuffer::post(HandleType p_colorbuffer, bool needLock)
     if (!m_subWin) {
         // AndroidEmu is headless: post to the iOS display without a desktop window.
         if (m_onPost && (*c).second.cb->getWidth() == (GLuint)m_width &&
-            (*c).second.cb->getHeight() == (GLuint)m_height) {
-            (*c).second.cb->readback(m_fbImage);
+            (*c).second.cb->getHeight() == (GLuint)m_height &&
+            (*c).second.cb->readback(m_fbImage)) {
             m_onPost(m_onPostContext, m_width, m_height, -1,
                      GL_RGBA, GL_UNSIGNED_BYTE, m_fbImage);
             ret = true;
@@ -985,8 +985,7 @@ bool FrameBuffer::post(HandleType p_colorbuffer, bool needLock)
     //
     // Send framebuffer (without FPS overlay) to callback
     //
-    if (m_onPost) {
-        (*c).second.cb->readback(m_fbImage);
+    if (m_onPost && (*c).second.cb->readback(m_fbImage)) {
         m_onPost(m_onPostContext,
                  m_width,
                  m_height,

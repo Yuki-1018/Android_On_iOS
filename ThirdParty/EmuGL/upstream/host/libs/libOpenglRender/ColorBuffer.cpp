@@ -194,6 +194,10 @@ ColorBuffer* ColorBuffer::create(EGLDisplay p_display,
                 imageAttributes);
         if (!cb->m_eglImage || !cb->m_blitEGLImage) { delete cb; return NULL; }
     }
+#ifdef AE_SYNC_SHARED_IMAGES
+    // Publish initialized shared storage before another context imports it.
+    s_gles2.glFinish();
+#endif
     return cb;
 }
 
@@ -259,6 +263,9 @@ void ColorBuffer::subUpdate(int x,
     s_gles2.glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     s_gles2.glTexSubImage2D(
             GL_TEXTURE_2D, 0, x, y, width, height, p_format, p_type, pixels);
+#ifdef AE_SYNC_SHARED_IMAGES
+    s_gles2.glFinish(); // CPU uploads become visible to guest image consumers.
+#endif
 }
 
 bool ColorBuffer::blitFromCurrentReadBuffer()
@@ -295,6 +302,12 @@ bool ColorBuffer::blitFromCurrentReadBuffer()
         s_gles1.glBindTexture(GL_TEXTURE_2D, currTexBind);
     }
 
+#ifdef AE_SYNC_SHARED_IMAGES
+    // EGLImage aliases cross independent guest/helper contexts. Scheduling the
+    // producer's Metal command buffer is not a completion fence for this handoff.
+    if (tInfo->currContext->isGL2()) s_gles2.glFinish();
+    else s_gles1.glFinish();
+#endif
     ScopedHelperContext context(m_helper);
     if (!context.isOk()) {
         return false;
@@ -310,13 +323,18 @@ bool ColorBuffer::blitFromCurrentReadBuffer()
     s_gles2.glViewport(0, 0, m_width, m_height);
 
     // render m_blitTex
-    m_helper->getTextureDraw()->draw(m_blitTex, 0.);
+    bool drawn = m_helper->getTextureDraw()->draw(m_blitTex, 0.);
+#ifdef AE_SYNC_SHARED_IMAGES
+    // Complete the helper write before replying to the guest's buffer swap.
+    // Otherwise the compositor may sample/recycle this storage while it is busy.
+    s_gles2.glFinish();
+#endif
 
     // Restore previous viewport.
     s_gles2.glViewport(vport[0], vport[1], vport[2], vport[3]);
     unbindFbo();
 
-    return true;
+    return drawn;
 }
 
 bool ColorBuffer::bindToTexture() {
@@ -358,14 +376,18 @@ bool ColorBuffer::post(float rotation) {
     return m_helper->getTextureDraw()->draw(m_tex, rotation);
 }
 
-void ColorBuffer::readback(unsigned char* img) {
+bool ColorBuffer::readback(unsigned char* img) {
     ScopedHelperContext context(m_helper);
     if (!context.isOk()) {
-        return;
+        return false;
     }
     if (bindFbo(&m_fbo, m_tex)) {
+        s_gles2.glGetError(); // Separate readback status from earlier helper work.
         s_gles2.glReadPixels(
                 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, img);
+        bool valid = s_gles2.glGetError() == GL_NO_ERROR;
         unbindFbo();
+        return valid;
     }
+    return false;
 }

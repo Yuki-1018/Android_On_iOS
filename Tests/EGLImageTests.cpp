@@ -57,6 +57,34 @@ int main(int argc, char **argv) {
         s_gles2.glBindTexture(GL_TEXTURE_2D, textures[0]);
         s_gles2.glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, green);
         pixel(green);
+        // Independent compositor context imports the same image. Repeated
+        // producer updates must be complete before the consumer reads them.
+        EGLContext consumer = s_egl.eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
+        EGLSurface consumerSurface = s_egl.eglCreatePbufferSurface(display, config, size);
+        s_gles2.glFinish();
+        require(s_egl.eglMakeCurrent(display, consumerSurface, consumerSurface, consumer), "consumer current");
+        GLuint imported, consumerFbo;
+        s_gles2.glGenTextures(1, &imported);
+        s_gles2.glBindTexture(GL_TEXTURE_2D, imported);
+        s_gles2.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
+        s_gles2.glGenFramebuffers(1, &consumerFbo);
+        s_gles2.glBindFramebuffer(GL_FRAMEBUFFER, consumerFbo);
+        s_gles2.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, imported, 0);
+        require(s_gles2.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "consumer FBO");
+        for (unsigned frame = 0; frame < 96; ++frame) {
+            require(s_egl.eglMakeCurrent(display, surface, surface, context), "producer current");
+            const uint8_t *color = frame % 2 ? green : red;
+            s_gles2.glBindTexture(GL_TEXTURE_2D, textures[0]);
+            s_gles2.glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, color);
+            s_gles2.glFinish();
+            require(s_egl.eglMakeCurrent(display, consumerSurface, consumerSurface, consumer), "compositor current");
+            pixel(color);
+        }
+        s_gles2.glDeleteFramebuffers(1, &consumerFbo);
+        s_gles2.glDeleteTextures(1, &imported);
+        require(s_egl.eglMakeCurrent(display, surface, surface, context), "restore producer");
+        s_egl.eglDestroyContext(display, consumer);
+        s_egl.eglDestroySurface(display, consumerSurface);
         // Mesa's same-size redefinition can reuse storage; keep the portable
         // lifetime case resized, and run the strict same-size case on ANGLE.
         const bool sameSize = argc == 2 && !std::strcmp(argv[1], "--same-size");

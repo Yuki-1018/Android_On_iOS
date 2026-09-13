@@ -88,6 +88,7 @@ bool ae_backend_init() {
         "glEGLImageTargetTexture2DOES",
         "glEnableVertexAttribArray",
         "glFramebufferTexture2D",
+        "glFinish",
         "glGenBuffers",
         "glGenFramebuffers",
         "glGenTextures",

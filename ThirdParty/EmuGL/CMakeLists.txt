@@ -74,6 +74,10 @@ endif()
 configure_file(androidemugl.pc.in androidemugl.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/androidemugl.pc DESTINATION lib/pkgconfig)
 option(EMUGL_TESTS "Build actual EGL/GLES wire protocol tests" OFF)
+# Exercise the same image handoff barriers in host tests as in the Metal build.
+if(APPLE OR EMUGL_TESTS)
+  target_compile_definitions(androidemugl PRIVATE AE_SYNC_SHARED_IMAGES=1)
+endif()
 if(EMUGL_TESTS)
   enable_testing()
   # Compile the actual Metal resolver with fake ANGLE exports on every host.
