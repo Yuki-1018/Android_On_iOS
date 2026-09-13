@@ -2,6 +2,7 @@
 """Apply SDK compatibility fixes to the pinned WebKit build copy, idempotently."""
 from pathlib import Path
 import sys
+import runpy
 
 
 def prepare(root):
@@ -18,16 +19,19 @@ def prepare(root):
             'if (priv::kDefaultBitSetSize < 64)',
             'if constexpr (priv::kDefaultBitSetSize < 64)', 1),
     }
-    pending = []
-    for name, (old, new, count) in replacements.items():
+    metal = runpy.run_path(str(Path(__file__).with_name('angle_metal_image.py')))['REPLACEMENTS']
+    edits = [(name, old, new, count) for name, (old, new, count) in replacements.items()]
+    edits += [(name, old, new, 1) for name, old, new in metal]
+    pending = {}
+    for name, old, new, count in edits:
         path = Path(root) / name
-        source = path.read_text()
-        if old not in source and source.count(new) == count:
+        source = pending.get(path, path.read_text())
+        if source.count(new) == count:
             continue
-        if source.count(old) != count or new in source:
+        if source.count(old) != count:
             raise ValueError(f'Unexpected pinned ANGLE source: {name}')
-        pending.append((path, source.replace(old, new)))
-    for path, source in pending:
+        pending[path] = source.replace(old, new)
+    for path, source in pending.items():
         path.write_text(source)
 
 

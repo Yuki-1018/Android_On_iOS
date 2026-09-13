@@ -12,7 +12,7 @@ def fingerprint(root, toolchain):
     # Installed dylib IDs and pkg-config files contain absolute workspace paths.
     digest.update(str(root.resolve()).encode())
     for name in ('ThirdParty/dependencies.lock.json', 'scripts/prepare_ios_sysroot.py',
-                 'scripts/prepare_angle.py', 'scripts/normalize_angle.py',
+                 'scripts/prepare_angle.py', 'scripts/angle_metal_image.py', 'scripts/normalize_angle.py',
                  'scripts/build_qemu_ios.sh', 'scripts/ios_dependency_key.py'):
         digest.update(name.encode())
         digest.update((root / name).read_bytes())

@@ -1,4 +1,5 @@
 #include "ImageKit/SparseImage.hpp"
+#include "Core/Text/UTF8.hpp"
 #include "Input/Touch.hpp"
 #include "Input/Keyboard.hpp"
 #include "Audio/PCMRing.hpp"
@@ -59,6 +60,14 @@ void imageTests(const std::filesystem::path& dir) {
     rejects([&] { emu::copyAndroidImage(src, out, 1024); });
 }
 void ringTests() {
+    const std::string japanese = "GPUの初期化に失敗しました";
+    auto decode = [](const std::string& value) {
+        return emu::logUTF8(reinterpret_cast<const uint8_t *>(value.data()), value.size());
+    };
+    check(decode(japanese) == japanese);
+    check(decode(std::string("\xff") + japanese) == std::string("\xef\xbf\xbd") + japanese);
+    check(decode(japanese + "\xe3") == japanese + "\xef\xbf\xbd");
+    check(decode("\xed\xa0\x80") == "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd");
     emu::SPSCRing<uint32_t, 16> ring;
     std::atomic<bool> correct{true};
     constexpr uint32_t count = 500000;

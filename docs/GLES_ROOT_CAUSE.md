@@ -45,3 +45,11 @@ ASan/UBSanでも描画テストを実行。Mesaのプロセス寿命キャッシ
 EmuGLは実装側`libGLESv2`の公開関数`EGL_GetProcAddress`へ直接リンクする。通常のMach-O依存として梱包され、`@rpath/libGLESv2.framework/libGLESv2`へ書き換わる。ビルド時のシンボル検査と、起動時のホスト描画用関数検査を追加した。関数が不足する場合は、その名前を起動エラーへ返す。
 
 `ANGLEBackendTests.cpp`は実際のMetal用Backend.cppをホスト上でコンパイルし、旧libEGL入口を呼ぶと異常終了する疑似ライブラリで、実装側への直接接続とNULL検出を検証する。実iOSの動作確認を代替するものではない。
+
+## EGLImage作成の不足
+
+固定版Metalの`DisplayMtl`は`EGL_KHR_image_base`を公開するが、`EGL_KHR_gl_texture_2D_image`は公開していない。`ImageMtl::initialize`も`EGL_METAL_TEXTURE_ANGLE`のみ実装していた。image_baseだけではGLテクスチャ由来の画像作成を保証しないため、EmuGLの検査を無条件に通す修正はしない。
+
+`angle_metal_image.py`でGLテクスチャの指定mipのMetalストレージを共有し、元テクスチャの削除・再定義時もEGLImage側で旧ストレージを保持する処理を追加した。対応拡張はこの実装と一緒に有効化する。ビルドキャッシュキーにパッチ本体も含める。
+
+`EGLImageTests.cpp`は画像作成、共有元の部分更新、サイズ変更による再定義、元テクスチャとEGLハンドル削除後の読み戻しを検査する。同じサイズでの再定義はホストMesaで旧ストレージが上書きされるため、別の`--same-size`ケースとしてApple/ANGLEビルドで実行する（本環境では未実行）。Linux/Mesaでの成功だけでは、このMetalパッチの実機検証完了を意味しない。

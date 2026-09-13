@@ -76,6 +76,12 @@ class AngleSDKCompatibilityTests(unittest.TestCase):
             header.parent.mkdir(parents=True)
             config.write_text('\n'.join(['-D_LIBCPP_ENABLE_ASSERTIONS=1'] * 5))
             header.write_text('if (priv::kDefaultBitSetSize < 64)')
+            import runpy
+            for name, old, new in runpy.run_path(str(ROOT / 'scripts/angle_metal_image.py'))['REPLACEMENTS']:
+                source = root / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                with source.open('a') as output:
+                    output.write(old + '\n')
             module.prepare(root)
             self.assertNotIn('-allowable_client', dynamic.read_text())
             expected = (config.read_text(), header.read_text())

@@ -6,6 +6,7 @@
 #import "Performance/RuntimeMetrics.h"
 #include "ThirdParty/AndroidQemuCompat/qemu/android51_host.h"
 #include "Network/GuestNetwork.hpp"
+#include "Core/Text/UTF8.hpp"
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include <vector>
@@ -74,8 +75,8 @@ static std::string optionPath(NSString *path) {
 - (NSString *)statusText { return _statusText; }
 - (NSString *)serialText {
     [_logLock lock]; NSData *copy = [_log copy]; [_logLock unlock];
-    // Serial may end mid UTF-8 sequence. Latin-1 preserves every diagnostic byte.
-    return [[NSString alloc] initWithData:copy encoding:NSISOLatin1StringEncoding] ?: @"";
+    auto text = emu::logUTF8(static_cast<const uint8_t *>(copy.bytes), copy.length);
+    return [[NSString alloc] initWithBytes:text.data() length:text.size() encoding:NSUTF8StringEncoding] ?: @"";
 }
 - (BOOL)prefersStatusBarHidden { return YES; }
 - (BOOL)prefersHomeIndicatorAutoHidden { return YES; }

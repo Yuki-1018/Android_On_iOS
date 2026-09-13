@@ -27,6 +27,14 @@
 #include <stdio.h>
 
 namespace {
+bool hasExtension(const char *extensions, const char *name) {
+    if (!extensions) return false;
+    size_t length = strlen(name);
+    for (const char *p = extensions; (p = strstr(p, name)); p += length) {
+        if ((p == extensions || p[-1] == ' ') && (p[length] == ' ' || !p[length])) return true;
+    }
+    return false;
+}
 
 // Helper class to call the bind_locked() / unbind_locked() properly.
 class ScopedBind {
@@ -298,47 +306,19 @@ bool FrameBuffer::initialize(int width, int height)
         return false;
     }
 
-    //
-    // Initilize framebuffer capabilities
-    //
-    //const char* gles2Extensions = (const char *)s_gles2.glGetString(GL_EXTENSIONS);
-    bool has_gl_oes_image = false;
-
-//     printf("GLES1 [%s]\n", gles1Extensions);
-//     printf("GLES2 [%s]\n", gles2Extensions);
-
-    has_gl_oes_image = true;
-
-    const bool hasGLES1 = gles1Extensions != NULL;
+    // ES1 support must not veto a working ES2 renderer. Expose only the
+    // context types that can import the gralloc EGLImage storage.
+    const bool hasGLES1 = hasExtension(gles1Extensions, "GL_OES_EGL_image");
     const char *gles2Extensions = (const char *)s_gles2.glGetString(GL_EXTENSIONS);
-    has_gl_oes_image = gles2Extensions && strstr(gles2Extensions, "GL_OES_EGL_image");
-    if (gles1Extensions) has_gl_oes_image &= strstr(gles1Extensions, "GL_OES_EGL_image") != NULL;
-    free((void*)gles1Extensions);
+    const bool hasImageImport = hasExtension(gles2Extensions, "GL_OES_EGL_image");
+    free(gles1Extensions);
     gles1Extensions = NULL;
-
-    const char *eglExtensions = s_egl.eglQueryString(fb->m_eglDisplay,
-                                                     EGL_EXTENSIONS);
-
-    if (eglExtensions && has_gl_oes_image) {
-        fb->m_caps.has_eglimage_texture_2d =
-             strstr(eglExtensions, "EGL_KHR_gl_texture_2D_image") != NULL;
-        fb->m_caps.has_eglimage_renderbuffer =
-             strstr(eglExtensions, "EGL_KHR_gl_renderbuffer_image") != NULL;
-    }
-    else {
-        fb->m_caps.has_eglimage_texture_2d = false;
-        fb->m_caps.has_eglimage_renderbuffer = false;
-    }
-
-    //
-    // Fail initialization if not all of the following extensions
-    // exist:
-    //     EGL_KHR_gl_texture_2d_image
-    //     GL_OES_EGL_IMAGE (by both GLES implementations [1 and 2])
-    //
+    const char *eglExtensions = s_egl.eglQueryString(fb->m_eglDisplay, EGL_EXTENSIONS);
+    fb->m_caps.has_eglimage_texture_2d = hasImageImport && hasExtension(eglExtensions, "EGL_KHR_gl_texture_2D_image");
+    fb->m_caps.has_eglimage_renderbuffer = hasImageImport && hasExtension(eglExtensions, "EGL_KHR_gl_renderbuffer_image");
     if (!fb->m_caps.has_eglimage_texture_2d) {
-        ERR("Failed: Missing egl_image related extension(s)\n");
-        ae_gpu_set_error("Failed: Missing egl_image related extension(s)");
+        ae_gpu_set_error(!hasImageImport ? "Missing GLES2 GL_OES_EGL_image" :
+            "Missing EGL_KHR_gl_texture_2D_image in ANGLE backend");
         bind.release();
         delete fb;
         return false;
