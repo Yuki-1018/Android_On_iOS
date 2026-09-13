@@ -66,6 +66,19 @@ int main(int argc, char **argv) {
  try {
     check(ae_gpu_init(64,64)==1,"EGL/GLES1/GLES2/EGLImage initialization");
     Client first, second;
+    // Repeated screen/layer allocation followed by a partial update must not
+    // expose pixels from an old allocation outside the updated rectangle.
+    for (unsigned iteration = 0; iteration < 12; ++iteration) {
+        auto buffer = first.call(OP_rcCreateColorBuffer,{64,64,0x1908},1)[0];
+        check(buffer != 0, "new color buffer");
+        auto pixels = first.call(OP_rcReadColorBuffer,{buffer,0,0,64,64,0x1908,0x1401,64*64*4},64*64);
+        check(std::all_of(pixels.begin(), pixels.end(), [](uint32_t p) { return p == 0; }), "new color buffer is initialized");
+        check(first.call(OP_rcUpdateColorBuffer,{buffer,2,3,1,1,0x1908,0x1401,4,0xff00ff00},1)[0] == 0, "partial update");
+        pixels = first.call(OP_rcReadColorBuffer,{buffer,0,0,64,64,0x1908,0x1401,64*64*4},64*64);
+        for (size_t i = 0; i < pixels.size(); ++i)
+            check(pixels[i] == (i == 3*64+2 ? 0xff00ff00u : 0u), "partial update preserves other pixels");
+        first.call(OP_rcCloseColorBuffer,{buffer});
+    }
     {
         Client slow;
         slow.call(OP_rcGetConfigs,{1u<<20,1u<<20});

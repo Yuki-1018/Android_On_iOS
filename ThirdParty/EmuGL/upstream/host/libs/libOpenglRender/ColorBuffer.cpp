@@ -134,6 +134,7 @@ ColorBuffer* ColorBuffer::create(EGLDisplay p_display,
     int nComp = (texInternalFormat == GL_RGB ? 3 : 4);
 
     char* zBuff = static_cast<char*>(::calloc(nComp * p_width * p_height, 1));
+    if (!zBuff) { delete cb; return NULL; }
     s_gles2.glTexImage2D(GL_TEXTURE_2D,
                          0,
                          texInternalFormat,
@@ -143,7 +144,6 @@ ColorBuffer* ColorBuffer::create(EGLDisplay p_display,
                          texInternalFormat,
                          GL_UNSIGNED_BYTE,
                          zBuff);
-    ::free(zBuff);
 
     s_gles2.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     s_gles2.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -163,7 +163,8 @@ ColorBuffer* ColorBuffer::create(EGLDisplay p_display,
                          0,
                          texInternalFormat,
                          GL_UNSIGNED_BYTE,
-                         NULL);
+                         zBuff);
+    ::free(zBuff);
 
     s_gles2.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     s_gles2.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -175,19 +176,23 @@ ColorBuffer* ColorBuffer::create(EGLDisplay p_display,
     cb->m_internalFormat = texInternalFormat;
 
     if (has_eglimage_texture_2d) {
+        // Image creation may discard the source pixels unless preservation is
+        // explicit. Both buffers can be observed before the first full redraw.
+        const EGLint imageAttributes[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
         cb->m_eglImage = s_egl.eglCreateImageKHR(
                 p_display,
                 s_egl.eglGetCurrentContext(),
                 EGL_GL_TEXTURE_2D_KHR,
                 (EGLClientBuffer)SafePointerFromUInt(cb->m_tex),
-                NULL);
+                imageAttributes);
 
         cb->m_blitEGLImage = s_egl.eglCreateImageKHR(
                 p_display,
                 s_egl.eglGetCurrentContext(),
                 EGL_GL_TEXTURE_2D_KHR,
                 (EGLClientBuffer)SafePointerFromUInt(cb->m_blitTex),
-                NULL);
+                imageAttributes);
+        if (!cb->m_eglImage || !cb->m_blitEGLImage) { delete cb; return NULL; }
     }
     return cb;
 }

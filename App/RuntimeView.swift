@@ -104,6 +104,12 @@ struct RuntimeView: View {
         .sheet(isPresented: $menu) {
             NavigationStack {
                 List {
+                    Section("ツール") {
+                        if let adb = runtime.controller.adb {
+                            NavigationLink("APK・ADB") { ADBToolsView(client: adb, paused: runtime.paused, resume: { runtime.pause(false) }) }
+                        }
+                        NavigationLink("シリアルログ") { RuntimeLogView(text: runtime.controller.serialText) }
+                    }
                     Section {
                         Text(runtime.status)
                         Text("起動から \(runtime.elapsedSeconds / 60)分\(runtime.elapsedSeconds % 60)秒")
@@ -117,29 +123,31 @@ struct RuntimeView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                         Toggle("パフォーマンスを表示", isOn: $runtime.showPerformance)
                     }
-                    Section("Androidの操作") {
-                        HStack {
-                            GuestKey(label: "戻る", code: 158, runtime: runtime)
-                            GuestKey(label: "ホーム", code: 172, runtime: runtime)
-                        }.buttonStyle(.bordered)
-                        HStack {
-                            GuestKey(label: "電源", code: 116, runtime: runtime)
-                            GuestKey(label: "音量−", code: 114, runtime: runtime)
-                            GuestKey(label: "音量＋", code: 115, runtime: runtime)
-                        }.buttonStyle(.bordered)
-                    }
-                    Section("旧アプリ向け") {
-                        HStack {
-                            GuestKey(label: "メニュー", code: 139, runtime: runtime)
-                            GuestKey(label: "検索", code: 217, runtime: runtime)
+                    Section {
+                        NavigationLink("Androidの操作ボタン") {
+                            List {
+                                Section("Androidの操作") {
+                                    HStack {
+                                        GuestKey(label: "戻る", code: 158, runtime: runtime)
+                                        GuestKey(label: "ホーム", code: 172, runtime: runtime)
+                                    }.buttonStyle(.bordered)
+                                    HStack {
+                                        GuestKey(label: "電源", code: 116, runtime: runtime)
+                                        GuestKey(label: "音量−", code: 114, runtime: runtime)
+                                        GuestKey(label: "音量＋", code: 115, runtime: runtime)
+                                    }.buttonStyle(.bordered)
+                                }
+                                Section("旧アプリ向け") {
+                                    HStack {
+                                        GuestKey(label: "メニュー", code: 139, runtime: runtime)
+                                        GuestKey(label: "検索", code: 217, runtime: runtime)
+                                    }
+                                }
+                            }.navigationTitle("Androidの操作")
                         }
                     }
                     DisclosureGroup("詳細ツール・診断") {
                         Text(network.description)
-                        if let adb = runtime.controller.adb {
-                            NavigationLink("APK・ADB") { ADBToolsView(client: adb, paused: runtime.paused, resume: { runtime.pause(false) }) }
-                        }
-                        Button("シリアルログ") { menu = false; log = true }
                         Text("停止すると、次回の起動にはアプリを開き直す必要があります。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Button("Androidを停止", role: .destructive) { confirmStop = true }
@@ -150,12 +158,8 @@ struct RuntimeView: View {
         }
         .sheet(isPresented: $log) {
             NavigationStack {
-                ScrollView { Text(runtime.controller.serialText).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
-                    .navigationTitle("起動ログ")
-                    .toolbar {
-                        ShareLink(item: runtime.controller.serialText)
-                        Button("閉じる") { log = false }
-                    }
+                RuntimeLogView(text: runtime.controller.serialText)
+                    .toolbar { Button("閉じる") { log = false } }
             }
         }
         .confirmationDialog("Androidを停止しますか？未保存のデータは失われる場合があります。", isPresented: $confirmStop, titleVisibility: .visible) {
@@ -169,21 +173,34 @@ private struct GuestKey: View {
     let label: String
     let code: UInt16
     let runtime: RuntimeModel
-    @State private var down = false
     var body: some View {
-        Text(label).frame(maxWidth: .infinity).padding(.vertical, 10)
-            .background(.secondary.opacity(down ? 0.3 : 0.1), in: RoundedRectangle(cornerRadius: 8))
-            .gesture(DragGesture(minimumDistance: 0).onChanged { _ in
-                if !down { down = true; runtime.controller.sendGuestKey(code, pressed: true) }
-            }.onEnded { _ in release() })
-            .onDisappear { release() }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
+        Button {
+            runtime.controller.sendGuestKey(code, pressed: true)
+            runtime.controller.sendGuestKey(code, pressed: false)
+        } label: {
+            Text(label).frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .contextMenu {
+            Button("長押し（1秒）") {
                 runtime.controller.sendGuestKey(code, pressed: true)
-                runtime.controller.sendGuestKey(code, pressed: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    runtime.controller.sendGuestKey(code, pressed: false)
+                }
             }
+        }
+        .disabled(runtime.stopped)
     }
-    private func release() {
-        if down { down = false; runtime.controller.sendGuestKey(code, pressed: false) }
+}
+
+private struct RuntimeLogView: View {
+    let text: String
+    var body: some View {
+        ScrollView {
+            Text(text).font(.caption.monospaced()).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading).padding()
+        }
+        .navigationTitle("起動ログ")
+        .toolbar { ShareLink(item: text) }
     }
 }
