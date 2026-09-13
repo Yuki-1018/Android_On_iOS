@@ -6,6 +6,11 @@ import sys
 
 def prepare(root):
     replacements = {
+        # These are our own BSD-licensed ANGLE binaries, not Apple's SDK copy.
+        # WebKit's client allowlist must not be inherited by the app build.
+        'Source/ThirdParty/ANGLE/Configurations/ANGLE-dynamic.xcconfig': (
+            'ANGLE_ALLOWABLE_CLIENTS_YES = -allowable_client WebCore -allowable_client WebCoreTestSupport;',
+            'ANGLE_ALLOWABLE_CLIENTS_YES = ; // AndroidEmu: standalone ANGLE library', 1),
         'Configurations/CommonBase.xcconfig': (
             '-D_LIBCPP_ENABLE_ASSERTIONS=1',
             '-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE', 5),

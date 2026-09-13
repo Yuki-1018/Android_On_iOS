@@ -13,6 +13,12 @@ import sys
 def normalize(prefix):
     lib = Path(prefix).resolve() / 'lib'
     owned = {name: (lib / name).resolve(strict=True) for name in ('libEGL.dylib', 'libGLESv2.dylib')}
+    # An install-name rewrite does not remove WebKit's LC_SUB_CLIENT allowlist.
+    # Reject stale/restricted builds before the linker encounters them.
+    for path in owned.values():
+        commands = subprocess.check_output(['otool', '-l', str(path)], text=True)
+        if 'LC_SUB_CLIENT' in commands:
+            raise ValueError(f'ANGLE library retains WebKit client restrictions; rebuild dependencies: {path}')
     for path in owned.values():
         lines = subprocess.check_output(['otool', '-L', str(path)], text=True).splitlines()[2:]
         subprocess.run(['install_name_tool', '-id', str(path), str(path)], check=True)

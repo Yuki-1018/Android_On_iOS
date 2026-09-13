@@ -48,6 +48,17 @@ class AnglePackagingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'GLES library does not export EGL_GetProcAddress'):
                     angle.normalize(prefix)
 
+    def test_restricted_webkit_binary_is_rejected_before_normalizing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = Path(directory)
+            (prefix / 'lib').mkdir()
+            for name in ('libEGL.dylib', 'libGLESv2.dylib'):
+                (prefix / 'lib' / name).touch()
+            with patch.object(angle.subprocess, 'check_output', return_value='cmd LC_SUB_CLIENT\nclient WebCore'), patch.object(angle.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'retains WebKit client restrictions'):
+                    angle.normalize(prefix)
+                run.assert_not_called()
+
 
 class AngleSDKCompatibilityTests(unittest.TestCase):
     def test_patch_is_idempotent_and_rejects_source_drift(self):
@@ -56,6 +67,9 @@ class AngleSDKCompatibilityTests(unittest.TestCase):
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            dynamic = root / 'Source/ThirdParty/ANGLE/Configurations/ANGLE-dynamic.xcconfig'
+            dynamic.parent.mkdir(parents=True)
+            dynamic.write_text('ANGLE_ALLOWABLE_CLIENTS_YES = -allowable_client WebCore -allowable_client WebCoreTestSupport;')
             config = root / 'Configurations/CommonBase.xcconfig'
             header = root / 'Source/ThirdParty/ANGLE/src/common/bitset_utils.h'
             config.parent.mkdir(parents=True)
@@ -63,6 +77,7 @@ class AngleSDKCompatibilityTests(unittest.TestCase):
             config.write_text('\n'.join(['-D_LIBCPP_ENABLE_ASSERTIONS=1'] * 5))
             header.write_text('if (priv::kDefaultBitSetSize < 64)')
             module.prepare(root)
+            self.assertNotIn('-allowable_client', dynamic.read_text())
             expected = (config.read_text(), header.read_text())
             module.prepare(root)
             self.assertEqual(expected, (config.read_text(), header.read_text()))

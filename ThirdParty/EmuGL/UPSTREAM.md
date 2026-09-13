@@ -32,3 +32,5 @@ Android 6 reference protocols:
 - https://android.googlesource.com/device/generic/goldfish/+/android-6.0.1_r1/opengl/system/renderControl_enc/renderControl.in
 
 The guest sends a zero 32-bit client-flags word after `pipe:opengles\0`, followed by GLES1, GLES2 and renderControl messages on the same stream. The renderControl operations used by Android 6 are present in this revision. This does not add GLES3, Vulkan, ARM64 or newer Android guest support.
+
+- Standalone iOS builds clear WebKit's `ANGLE_ALLOWABLE_CLIENTS_YES` in the downloaded ANGLE configuration. `normalize_angle.py` rejects any resulting dylib that still contains `LC_SUB_CLIENT`. This affects only the app-built ANGLE, never Apple SDK/system binaries.
