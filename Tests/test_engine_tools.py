@@ -88,3 +88,40 @@ class EnginePackagingTests(unittest.TestCase):
         self.minimum = '26.0'
         with self.assertRaisesRegex(ValueError, 'newer iOS'):
             self.invoke()
+
+
+class EngineExportPatchTests(unittest.TestCase):
+    def test_fresh_and_prepared_export_lists_cover_application_abi(self):
+        import subprocess
+        import re
+        # Original pinned system/qemu.symbols before AndroidEmu integration.
+        original = '''{
+  qemu_init;
+  qemu_main_loop;
+  qemu_cleanup;
+  bql_lock_impl;
+  bql_unlock;
+  g_assertion_message_expr;
+  qemu_thread_create;
+  replay_mutex_lock;
+  replay_mutex_unlock;
+};
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'system').mkdir()
+            symbols = root / 'system/qemu.symbols'
+            symbols.write_text(original)
+            patches = [ROOT / 'ThirdParty/AndroidQemuCompat/patches' / name for name in
+                       ('0005-export-embedded-api.patch', '0006-export-graphics-preflight.patch')]
+            # Fresh preparation, then repeat the same reverse-check logic used
+            # by prepare_qemu.py on an already prepared checkout.
+            for iteration in range(2):
+                for path in patches:
+                    reverse = subprocess.run(['git', '-C', directory, 'apply', '--reverse', '--check', str(path)], capture_output=True)
+                    if reverse.returncode:
+                        subprocess.run(['git', '-C', directory, 'apply', str(path)], check=True, capture_output=True)
+                exports = set(re.findall(r'^\s*(\w+);', symbols.read_text(), re.MULTILINE))
+                self.assertTrue(package.REQUIRED_ENGINE_SYMBOLS <= exports,
+                                package.REQUIRED_ENGINE_SYMBOLS - exports)
+                self.assertEqual(symbols.read_text().count('android51_host_prepare_graphics;'), 1)

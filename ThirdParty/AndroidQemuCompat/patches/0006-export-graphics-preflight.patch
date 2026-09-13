@@ -1,0 +1,19 @@
+From: AndroidEmu contributors
+Subject: [PATCH] system: export graphics preflight to the embedding application
+
+The app resolves this entry point before starting QEMU. Darwin's explicit
+export list must retain it even though QEMU itself does not call it.
+Keep this separate from 0005 so previously prepared checkouts can update.
+
+SPDX-License-Identifier: GPL-2.0-or-later
+
+--- a/system/qemu.symbols
++++ b/system/qemu.symbols
+@@ -11,6 +11,7 @@
+   qemu_init;
+   qemu_main_loop;
+   qemu_cleanup;
++  android51_host_prepare_graphics;
+   bql_lock_impl;
+   bql_unlock;
+   g_assertion_message_expr;
