@@ -10,32 +10,65 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import time
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_REV = '880d9af358076df842377facd4b900f6bbecc783'
 GCC_REV = '26e93f6af47f7bd3a9beb5c102a5f45e19bfa38a'
 INPUTS = (
-    ('source', f'https://android.googlesource.com/kernel/goldfish/+archive/{SOURCE_REV}.tar.gz',
-     'b4f02ad477b063f83d14e5070a08d2772633b7360453bfdf9f4dea7d5cb980c9'),
-    ('toolchain', f'https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8/+archive/{GCC_REV}.tar.gz',
-     'a68bc3321919863b0dc21f2242b505f9b40e766456bc6633125aae2cc22a2722'),
+    ('source', 'https://android.googlesource.com/kernel/goldfish', SOURCE_REV),
+    ('toolchain', 'https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8', GCC_REV),
 )
 
-def verified_archive(path, url, digest):
-    if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-        partial = path.with_suffix('.partial')
-        subprocess.run(['curl', '-fL', '--retry', '4', '--connect-timeout', '30', '-o', str(partial), url], check=True)
-        if hashlib.sha256(partial.read_bytes()).hexdigest() != digest:
-            partial.unlink()
-            raise RuntimeError(f'Checksum mismatch: {url}')
+def verified_archive(path, repository, revision):
+    """Verify Git objects at an exact commit, then generate our own archive.
+
+    Gitiles +archive responses are generated tar/gzip representations, not
+    immutable release assets. Their compressed-byte digest is not a source ID.
+    Never trust an old downloaded archive merely because it exists locally.
+    """
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError('A full pinned commit ID is required')
+    path = Path(path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    checkout = path.with_suffix('.git')
+    if not checkout.exists():
+        subprocess.run(['git', 'init', '--bare', '--quiet', str(checkout)], check=True)
+    git = ['git', '-C', str(checkout)]
+    present = subprocess.run(git + ['cat-file', '-e', revision + '^{commit}'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if not present:
+        for attempt in range(4):
+            try:
+                subprocess.run(git + ['-c', 'fetch.fsckObjects=true', 'fetch', '--no-tags',
+                                     '--depth=1', repository, revision], check=True, timeout=300)
+                break
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                if attempt == 3: raise
+                time.sleep(2 ** attempt)
+    actual = subprocess.check_output(git + ['rev-parse', '--verify', revision + '^{commit}'], text=True).strip()
+    if actual != revision:
+        raise RuntimeError(f'Commit mismatch: expected {revision}, got {actual}')
+    subprocess.run(git + ['fsck', '--full', '--no-dangling', revision], check=True)
+    # Keep the verified commit reachable across cache reuse and Git GC.
+    subprocess.run(git + ['update-ref', 'refs/heads/pinned', revision], check=True)
+    partial = path.with_suffix('.partial')
+    try:
+        subprocess.run(git + ['archive', '--format=tar.gz', '--output=' + str(partial), revision], check=True)
         partial.replace(path)
+    finally:
+        partial.unlink(missing_ok=True)
+    # This local digest invalidates extracted caches; provenance is the commit
+    # and its verified tree/blob objects, not this generated gzip checksum.
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def main():
     work = ROOT / 'build/highmem'
     work.mkdir(parents=True, exist_ok=True)
-    for name, url, digest in INPUTS:
+    for name, url, revision in INPUTS:
         archive = work / f'{name}.tar.gz'
-        verified_archive(archive, url, digest)
+        digest = verified_archive(archive, url, revision)
         destination = work / name
         marker = destination / '.androidemu-input-sha256'
         if not marker.is_file() or marker.read_text().strip() != digest:
@@ -66,7 +99,7 @@ def main():
     shutil.copy2(source / 'COPYING', output / 'goldfish-kernel-COPYING.txt')
     shutil.copy2(work / 'source.tar.gz', output / 'goldfish-kernel-source.tar.gz')
     (output / 'goldfish-kernel-build.txt').write_text(
-        f'AOSP Goldfish Linux 3.4.67\nSource: {INPUTS[0][1]}\nGCC: {INPUTS[1][1]}\n'
+        f'AOSP Goldfish Linux 3.4.67\nSource: {INPUTS[0][1]} @ {SOURCE_REV}\nGCC: {INPUTS[1][1]} @ {GCC_REV}\n'
         'Build: python3 scripts/build_highmem_kernel.py\n'
         'Configuration: goldfish-highmem.config (goldfish_armv7_defconfig)\n'
         'No source patches. CONFIG_HIGHMEM=y. Goldfish MMIO starts at 0xff000000.\n')

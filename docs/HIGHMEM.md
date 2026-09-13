@@ -19,7 +19,7 @@
 
 ## ビルド・検証
 
-Linuxで`python3 scripts/build_highmem_kernel.py`を実行する。固定リビジョンとSHA-256を照合したソース／GCC 4.8を使用。出力は`build/guest-kernel/`。macOSではCIの`goldfish-highmem-kernel`成果物をこのディレクトリに置いてiOSアプリをビルドする。
+Linuxで`python3 scripts/build_highmem_kernel.py`を実行する。ソース／GCC 4.8を固定Gitコミットで取得し、コミットIDと`git fsck --full`によるオブジェクト検証を行う。Googleの動的な`+archive`応答のSHA-256には依存せず、検証済みコミットから配布用アーカイブをローカル生成する。出力は`build/guest-kernel/`。macOSではCIの`goldfish-highmem-kernel`成果物をこのディレクトリに置いてiOSアプリをビルドする。
 
 `python3 Tests/QEMU/test_highmem_kernel.py`は、実QEMUで2048／4080 MiBのLinuxを起動し、ARMユーザー空間から1 GiBの全ページに書き込み・読み戻しする。両容量で成功を確認した。4096 MiBをQEMUへ直接渡した場合の拒否も検査する。
 

@@ -46,7 +46,7 @@ The kernel retains GPL-2.0-only and the individual source-file terms. Its
 `COPYING` is embedded as `goldfish-kernel-COPYING.txt`. The complete pinned
 source archive, actual `.config`, build information, and project build script
 accompany the IPA artifacts. `scripts/build_highmem_kernel.py` records source
-and compiler URLs, revisions and checksums. The compiler is AOSP's Linux ARM
+and compiler repository URLs and pinned commits, verified with Git object checks. The compiler is AOSP's Linux ARM
 GCC 4.8 at revision `26e93f6af47f7bd3a9beb5c102a5f45e19bfa38a`; compiler
 binaries are used for building/testing and are not included in the app.
 
